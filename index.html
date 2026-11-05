@@ -112,6 +112,8 @@ main .wrap{padding-block:18px;display:grid;gap:14px}
 .icon-btn{border:0;background:transparent;color:var(--muted);width:36px;height:36px;border-radius:8px;display:grid;place-items:center}
 .icon-btn:hover{background:var(--surface-2);color:var(--ink)}
 
+.dz{font-family:var(--f-body);font-weight:500;font-size:.74rem;color:var(--teal);background:var(--teal-soft);padding:1px 8px;border-radius:99px;margin-inline-start:4px;white-space:nowrap;vertical-align:middle}
+.alarm-dz{font-size:1.1rem;opacity:.9}
 /* author's dedication */
 .gift{display:grid;justify-items:center;gap:4px;text-align:center;padding:16px 12px 6px;color:var(--muted)}
 .gift svg{color:var(--bad);opacity:.85}
@@ -223,7 +225,7 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const APP_VERSION="2.0";
+const APP_VERSION="2.1";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:"",gender:"female"}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
@@ -494,6 +496,7 @@ function showAlarm(d){
     <div class="label" style="color:inherit;opacity:.85">حان موعد الدواء · ${fmtTime(d.time)}</div>
     <h2>${esc(m.name)}</h2>
     ${m.dose?`<div class="dosebig">${esc(m.dose)}</div>`:""}
+    ${diseaseOf(m)?`<div class="alarm-dz">لعلاج ${esc(diseaseOf(m))}</div>`:""}
     <div class="meta">${[food,dr?("د. "+esc(dr.name)):"",m.notes?esc(m.notes):""].filter(Boolean).join(" · ")}</div>
     ${alarmQueue.length?`<div class="more">و${alarmQueue.length} ${alarmQueue.length>1?"أدوية أخرى":"دواء آخر"} في نفس الوقت</div>`:""}
     <div class="btns">
@@ -561,7 +564,7 @@ function vToday(){
         ? `<button class="btn sm ghost" data-undo="${esc(d.key)}">تراجع</button>`
         : `<button class="btn sm ok" data-take="${esc(d.key)}" aria-label="أخذت ${esc(m.name)}">${I.check}</button>`;
       return `<div class="dose ${st}"><div class="time">${fmtTime(d.time).replace(/ (ص|م)$/,"<small>$1</small>").replace(/<small>ص<\/small>/,"<small>صباحاً</small>").replace(/<small>م<\/small>/,"<small>مساءً</small>")}</div>
-        <div class="info"><b>${esc(m.name)} ${chip}</b><span>${esc(m.dose||"")}${food?" · "+food:""}</span></div><div class="acts">${acts}</div></div>`;}).join("");
+        <div class="info"><b>${esc(m.name)}${dz(m)} ${chip}</b><span>${esc(m.dose||"")}${food?" · "+food:""}</span></div><div class="acts">${acts}</div></div>`;}).join("");
   } else {
     h+=`<div class="empty"><b>لا توجد جرعات مجدولة اليوم</b>سجّل وصفة من طبيبك، أو أضف دواءً بدون وصفة مثل فيتامين أو مسكّن.<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-go="${S.doctors.length?"rx":"doctors"}">${I.plus} ${S.doctors.length?"إضافة وصفة":"إضافة طبيب"}</button><button class="btn ghost" data-go="otc">${I.plus} دواء بدون وصفة</button></div></div>`;
   }
@@ -573,7 +576,7 @@ function vToday(){
       const last=s.last?`آخر جرعة ${fmtClock(s.last)}${s.lastDay!==today()?" ("+new Date(s.last).toLocaleDateString("ar-EG",{weekday:"long"})+")":""}`:"لم تُؤخذ بعد";
       const warn=s.maxed?`<span class="chip bad">وصلت للحد اليومي</span>`:s.waitMin>0?`<span class="chip amb">الجرعة التالية بعد ${fmtDur(s.waitMin)}</span>`:"";
       return `<div class="dose ${s.maxed||s.waitMin>0?"due":"upcoming"}"><div class="time">${s.count}<small>اليوم${m.maxDay?" من "+m.maxDay:""}</small></div>
-        <div class="info"><b>${esc(m.name)}</b><span>${esc(m.dose||"")}${FOOD[m.food||""]?" · "+FOOD[m.food||""]:""}</span><span>${last} ${warn}</span></div>
+        <div class="info"><b>${esc(m.name)}${dz(m)}</b><span>${esc(m.dose||"")}${FOOD[m.food||""]?" · "+FOOD[m.food||""]:""}</span><span>${last} ${warn}</span></div>
         <div class="acts" style="flex-direction:column">${s.last&&Date.now()-s.last<6*3600000?`<button class="btn sm ghost" data-prnundo="${s.last}" aria-label="حذف آخر جرعة مسجلة">تراجع</button>`:""}<button class="btn sm ok" data-prn="${m.id}">${I.check} أخذت</button></div></div>`;}).join("");
     h+=`<div id="prnConfirm"></div>`;
   }
@@ -625,9 +628,12 @@ function logPrn(id,force){
 }
 
 /* ---------- view: prescriptions ---------- */
+// The illness a medicine treats: its own field, or the diagnosis written on its prescription.
+function diseaseOf(m){ if(m.disease) return m.disease; const r=m.rxId&&rxOf(m.rxId); return r&&r.title?r.title:""; }
+const dz=m=>{const t=diseaseOf(m); return t?` <small class="dz">${esc(t)}</small>`:"";};
 function medRow(m){const food=FOOD[m.food||""]; const end=m.days?addDays(m.start,Number(m.days)-1):null; const ended=end&&end<today();
   const when=m.prn?`عند اللزوم${m.gapH?" · كل "+m.gapH+" ساعات على الأقل":""}${m.maxDay?" · حد أقصى "+m.maxDay+" في اليوم":""}`:(m.days?"لمدة "+m.days+" يوم":"مستمر");
-  return `<div class="med">${pill(26,m.prn?"var(--amber)":"var(--teal)")}<div><b>${esc(m.name)}</b> ${m.paused?'<span class="chip mut">متوقف</span>':ended?'<span class="chip mut">انتهى</span>':""}
+  return `<div class="med">${pill(26,m.prn?"var(--amber)":"var(--teal)")}<div><b>${esc(m.name)}</b>${dz(m)} ${m.paused?'<span class="chip mut">متوقف</span>':ended?'<span class="chip mut">انتهى</span>':""}
   <div class="sub">${esc(m.dose||"")}${food?" · "+food:""} · ${when}</div>
   ${m.prn?"":`<div class="times">${(m.times||[]).map(t=>`<span class="chip teal">${fmtTime(t)}</span>`).join("")}</div>`}</div>
   <button class="icon-btn" data-editmed="${m.id}" aria-label="تعديل ${esc(m.name)}">${I.edit}</button></div>`;}
@@ -894,7 +900,7 @@ function rxSheet(r){
   sheet(`${head(isNew?"وصفة جديدة":"تعديل الوصفة")}
     <div class="field"><label for="rd">الطبيب</label><select id="rd">${S.doctors.map(d=>`<option value="${d.id}" ${d.id===r.doctorId?"selected":""}>د. ${esc(d.name)}${d.specialty?" — "+esc(d.specialty):""}</option>`).join("")}</select></div>
     <div class="two"><div class="field"><label for="rdt">تاريخ الوصفة</label><input id="rdt" type="date" value="${esc(r.date)}"></div>
-    <div class="field"><label for="rt">التشخيص / ملاحظة</label><input id="rt" value="${esc(r.title)}" placeholder="اختياري"></div></div>
+    <div class="field"><label for="rt">التشخيص (اسم المرض)</label><input id="rt" list="dzlist2" value="${esc(r.title)}" placeholder="مثال: ضغط الدم"><datalist id="dzlist2">${["ضغط الدم","السكر","الكوليسترول","القلب","الغدة الدرقية","المعدة","المفاصل","الحساسية"].map(x=>`<option value="${x}">`).join("")}</datalist></div></div>
     <button class="btn block" type="submit">${isNew?"حفظ ثم إضافة الأدوية":"حفظ"}</button>${del?del.html:""}`,
   (f,close)=>{ if(del)del.bind(f,close);
     f.onsubmit=e=>{e.preventDefault(); Object.assign(r,{doctorId:$("#rd").value,date:$("#rdt").value,title:$("#rt").value.trim()});
@@ -922,6 +928,7 @@ function medSheet(m,rxId){
     <div class="field"><label for="mf">التعليمات</label><select id="mf">${Object.entries(FOOD).map(([k,v])=>`<option value="${k}" ${k===(m.food||"")?"selected":""}>${v||"بدون تعليمات"}</option>`).join("")}</select></div>
     <div class="two" id="durBox"><div class="field"><label for="ms">يبدأ من</label><input id="ms" type="date" value="${esc(m.start)}"></div>
     <div class="field"><label for="mdays">المدة بالأيام</label><input id="mdays" type="number" min="1" inputmode="numeric" value="${esc(m.days)}" placeholder="فارغ = مستمر"></div></div>
+    <div class="field"><label for="mdz">لعلاج (اسم المرض)</label><input id="mdz" list="dzlist" value="${esc(m.disease||"")}" placeholder="مثال: ضغط الدم"><datalist id="dzlist">${["ضغط الدم","السكر","الكوليسترول","القلب","الغدة الدرقية","المعدة","القولون","المفاصل","الصداع","الحساسية","الربو","الأعصاب","البرد والإنفلونزا","فيتامينات ومكملات","سيولة الدم","البروستاتا","هشاشة العظام"].map(x=>`<option value="${x}">`).join("")}</datalist></div>
     <div class="field"><label for="mno">ملاحظات</label><input id="mno" value="${esc(m.notes)}" placeholder="اختياري"></div>
     ${!isNew?`<div class="set-item"><div><b>إيقاف مؤقت للدواء</b><small>لن تظهر جرعاته ولن يرن له منبّه</small></div><input type="checkbox" class="switch" id="mp" ${m.paused?"checked":""} aria-label="إيقاف مؤقت"></div>`:""}
     <p class="err" id="er" hidden></p>
@@ -950,7 +957,7 @@ function medSheet(m,rxId){
       if(!prn&&!clean.length){er.textContent="أضف موعداً واحداً على الأقل";er.hidden=false;return;}
       const num=v=>v?String(Math.max(1,parseInt(v)||1)):"";
       Object.assign(m,{prn,gapH:prn?num($("#mg").value):"",maxDay:prn?num($("#mx").value):""});
-      Object.assign(m,{name,dose:$("#md").value.trim(),times:prn?[]:clean,food:$("#mf").value,start:$("#ms").value||today(),days:$("#mdays").value?String(Math.max(1,parseInt($("#mdays").value))):"",notes:$("#mno").value.trim()});
+      Object.assign(m,{name,dose:$("#md").value.trim(),times:prn?[]:clean,food:$("#mf").value,start:$("#ms").value||today(),days:$("#mdays").value?String(Math.max(1,parseInt($("#mdays").value))):"",disease:$("#mdz").value.trim(),notes:$("#mno").value.trim()});
       const mp=$("#mp"); if(mp) m.paused=mp.checked;
       if(isNew){m.id=uid();S.meds.push(m);} save(); close(); render(); toast(isNew?"تمت إضافة الدواء ومواعيده":"تم الحفظ"); unlockAudio();};
   });
@@ -972,11 +979,11 @@ function seedDemo(){
   const r1={id:uid(),doctorId:d1.id,date:addDays(today(),-10),title:"متابعة ضغط"};
   const r2={id:uid(),doctorId:d2.id,date:addDays(today(),-3),title:""};
   S.doctors.push(d1,d2); S.rx.push(r1,r2);
-  S.meds.push({id:uid(),rxId:r1.id,name:"دواء الضغط (مثال)",dose:"قرص واحد",times:["09:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
-    {id:uid(),rxId:r1.id,name:"أسبرين 81 (مثال)",dose:"قرص واحد",times:["14:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
-    {id:uid(),rxId:r2.id,name:"ميتفورمين 500 (مثال)",dose:"قرص واحد",times:["08:00","20:00"],food:"with",start:addDays(today(),-3),days:"30",notes:""},
-    {id:uid(),rxId:"",name:"فيتامين د (مثال)",dose:"كبسولة واحدة",times:["10:00"],food:"with",start:today(),days:"",notes:""},
-    {id:uid(),rxId:"",name:"باراسيتامول 500 (مثال)",dose:"قرص واحد",times:[],prn:true,gapH:"6",maxDay:"4",food:"after",start:today(),days:"",notes:"للصداع"});
+  S.meds.push({id:uid(),rxId:r1.id,name:"دواء الضغط (مثال)",disease:"ضغط الدم",dose:"قرص واحد",times:["09:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
+    {id:uid(),rxId:r1.id,name:"أسبرين 81 (مثال)",disease:"سيولة الدم",dose:"قرص واحد",times:["14:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
+    {id:uid(),rxId:r2.id,name:"ميتفورمين 500 (مثال)",disease:"السكر",dose:"قرص واحد",times:["08:00","20:00"],food:"with",start:addDays(today(),-3),days:"30",notes:""},
+    {id:uid(),rxId:"",name:"فيتامين د (مثال)",disease:"فيتامينات ومكملات",dose:"كبسولة واحدة",times:["10:00"],food:"with",start:today(),days:"",notes:""},
+    {id:uid(),rxId:"",name:"باراسيتامول 500 (مثال)",dose:"قرص واحد",times:[],prn:true,gapH:"6",maxDay:"4",food:"after",start:today(),days:"",disease:"الصداع",notes:""});
 }
 
 /* ---------- toast ---------- */
