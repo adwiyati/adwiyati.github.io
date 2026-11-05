@@ -262,7 +262,37 @@ function unlockAudio(){
   try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state!=="running") AC.resume().then(renderTop); }catch(e){}
   renderTop();
 }
-document.addEventListener("pointerdown",()=>{ if(!audioReady()) unlockAudio(); },{capture:true});
+document.addEventListener("pointerdown",()=>{ if(!audioReady()) unlockAudio(); primeSpeech(); },{capture:true});
+document.addEventListener("touchend",primeSpeech,{capture:true});
+
+/* ---------- speech (Arabic text-to-speech) ---------- */
+const HAS_TTS="speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+let VOICES=[], speechPrimed=false;
+function loadVoices(){ try{ VOICES=speechSynthesis.getVoices()||[]; }catch(e){ VOICES=[]; } }
+if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged",()=>{loadVoices(); if(tab==="more"&&!document.querySelector(".scrim"))vMore();}); }catch(e){} }
+function arabicVoice(){
+  if(!VOICES.length) loadVoices();
+  const ar=VOICES.filter(v=>/^ar([-_]|$)/i.test(v.lang));
+  return ar.find(v=>/eg/i.test(v.lang)) || ar.find(v=>v.localService) || ar[0] || null;
+}
+// Phones (iPhone especially) only allow speech after it was first started by a tap.
+function primeSpeech(){
+  if(!HAS_TTS||speechPrimed) return; speechPrimed=true;
+  try{ const u=new SpeechSynthesisUtterance(" "); u.volume=0; u.lang="ar"; speechSynthesis.speak(u); }catch(e){}
+}
+function speak(text,done){
+  let finished=false; const end=()=>{ if(finished)return; finished=true; done&&done(); };
+  if(!S.settings.speech||!HAS_TTS){ setTimeout(end,1200); return; }
+  try{
+    const u=new SpeechSynthesisUtterance(text); const v=arabicVoice();
+    if(v){u.voice=v;u.lang=v.lang;} else u.lang="ar-SA";
+    u.rate=.9; u.volume=1; u.onend=end; u.onerror=end;
+    const go=()=>{ try{ speechSynthesis.resume(); speechSynthesis.speak(u); }catch(e){ end(); } };
+    // Chrome on Android drops a speak() issued right after cancel(); give it a moment.
+    if(speechSynthesis.speaking||speechSynthesis.pending){ speechSynthesis.cancel(); setTimeout(go,250); } else go();
+    setTimeout(end,Math.max(6000,text.length*160));
+  }catch(e){ end(); }
+}
 function chime(){
   if(!AC) return; const v=S.settings.volume; const t0=AC.currentTime;
   [[880,0],[1175,.18],[1568,.36],[1175,.9],[1568,1.08],[2093,1.26]].forEach(([f,dt])=>{
@@ -271,18 +301,19 @@ function chime(){
     o.connect(g).connect(AC.destination); o.start(t0+dt); o.stop(t0+dt+.55);
   });
 }
-function speak(text){
-  if(!S.settings.speech || !("speechSynthesis" in window)) return;
-  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang="ar-EG";
-    const v=speechSynthesis.getVoices().find(v=>/^ar/i.test(v.lang)); if(v) u.voice=v; u.rate=.95; speechSynthesis.speak(u);}catch(e){}
-}
+// Ring cycle: chime + vibrate, then speak the medicine name and dose, then repeat until a button is pressed.
+let ringing=false;
 function startRinging(text){
-  stopRinging(); let n=0;
-  const tick=()=>{ chime(); if(navigator.vibrate) try{navigator.vibrate([400,200,400,200,800]);}catch(e){}
-    if(n%3===1) speak(text); n++; };
-  tick(); ringTimer=setInterval(tick,3200);
+  stopRinging(); ringing=true; let n=0;
+  const cycle=()=>{ if(!ringing)return;
+    chime(); if(navigator.vibrate) try{navigator.vibrate([400,200,400,200,800]);}catch(e){}
+    const say = S.settings.speech && HAS_TTS && n<8; n++;
+    if(say) ringTimer=setTimeout(()=>{ if(!ringing)return; speak(text,()=>{ if(ringing) ringTimer=setTimeout(cycle,900); }); },1700);
+    else ringTimer=setTimeout(cycle,3200);
+  };
+  cycle();
 }
-function stopRinging(){ if(ringTimer){clearInterval(ringTimer);ringTimer=null;} try{speechSynthesis.cancel();}catch(e){} if(navigator.vibrate) try{navigator.vibrate(0);}catch(e){} }
+function stopRinging(){ ringing=false; if(ringTimer){clearTimeout(ringTimer);ringTimer=null;} try{ if(HAS_TTS) speechSynthesis.cancel();}catch(e){} if(navigator.vibrate) try{navigator.vibrate(0);}catch(e){} }
 
 let SWREG=null;
 if("serviceWorker" in navigator && location.protocol.startsWith("http")){
@@ -498,6 +529,7 @@ function vMore(){
   <div class="card set-list">
     <div class="set-item"><div><b>تجربة المنبّه</b><small>اسمع صوت التنبيه والنطق الآن</small></div><button class="btn sm" id="testAlarm">تجربة</button></div>
     <div class="set-item"><div><b>نطق اسم الدواء والجرعة</b><small>يقرأ التنبيه بصوت عربي</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="نطق اسم الدواء"></div>
+    <div class="set-item"><div><b>تجربة النطق</b><small id="voiceInfo">${voiceInfo()}</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
     <div class="set-item"><div><b>مستوى الصوت</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="مستوى الصوت"></div>
     <div class="set-item"><div><b>مدة الغفوة</b></div><select id="snz" class="btn ghost sm" aria-label="مدة الغفوة">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} دقائق</option>`).join("")}</select></div>
     <div class="set-item"><div><b>إشعارات الهاتف</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">تفعيل</button>':""}</div>
@@ -525,6 +557,10 @@ function vMore(){
   $("#vol").onchange=e=>{S.settings.volume=Number(e.target.value);save();unlockAudio();chime();};
   $("#snz").onchange=e=>{S.settings.snooze=Number(e.target.value);save();};
   $("#wk").onchange=e=>setWake(e.target.checked);
+  $("#testSpeak").onclick=()=>{ speechPrimed=true; if(!HAS_TTS){toast("هذا المتصفح لا يدعم النطق");return;}
+    const was=S.settings.speech; S.settings.speech=true;
+    const m=S.meds[0]; speak(`${S.profile.name?"يا "+S.profile.name+"، ":""}حان موعد ${m?m.name:"الدواء"}. الجرعة: ${m?(m.dose||""):"قرص واحد"}`);
+    S.settings.speech=was; setTimeout(()=>{ const vi=$("#voiceInfo"); if(vi) vi.textContent=voiceInfo(); },800); };
   $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:"دواء تجريبي",dose:"قرص واحد",food:"after",id:"demo"};
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
   const a=$("#askN"); if(a) a.onclick=async()=>{try{await Notification.requestPermission();}catch(e){} vMore();};
@@ -537,6 +573,14 @@ function vMore(){
   $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">متأكد؟ لا يمكن التراجع.</span><button class="btn danger sm" id="wipe2">نعم، احذف</button><button class="btn ghost sm" id="wipeNo">إلغاء</button>`;
     $("#wipe2").onclick=()=>{S=blank();save();toast("تم حذف البيانات");render();welcome();};
     $("#wipeNo").onclick=vMore;};
+}
+function voiceInfo(){
+  if(!HAS_TTS) return "هذا المتصفح لا يدعم النطق. جرّب Chrome على أندرويد أو Safari على آيفون.";
+  const v=arabicVoice();
+  if(v) return "الصوت العربي: "+v.name;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    ? "لم يُعثر على صوت عربي. من الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، نزّل صوتاً."
+    : "لم يُعثر على صوت عربي. من إعدادات الهاتف ← اللغة والإدخال ← تحويل النص إلى كلام ← محرك Google ← تثبيت بيانات الصوت ← العربية.";
 }
 function restore(txt){
   try{const d=JSON.parse(txt); if(!d||!Array.isArray(d.meds)||!Array.isArray(d.doctors)) throw 0;
