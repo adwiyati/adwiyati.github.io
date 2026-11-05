@@ -366,7 +366,7 @@ function showAlarm(d){
     else { if(!d.key.startsWith("test|")){S.log[d.key]=a; save();} toast(a==="taken"?"تم تسجيل الجرعة ✓":"تم تخطي الجرعة"); }
     render(); setTimeout(checkDue,300);
   });
-  const text=`يا ${S.profile.name||""}، حان موعد دواء ${m.name}. الجرعة: ${m.dose||""}. ${food}`;
+  const text=`يا ${S.profile.name||""}، حان موعد ${m.name}. الجرعة: ${m.dose||""}. ${food}`;
   startRinging(text);
   systemNotify("💊 حان موعد "+m.name,(m.dose||"")+(food?" · "+food:""),d.key);
 }
@@ -376,7 +376,7 @@ async function setWake(on){
   if(on && "wakeLock" in navigator){ try{ wakeLock=await navigator.wakeLock.request("screen"); }catch(e){ toast("الجهاز لم يسمح بإبقاء الشاشة مضاءة"); } }
   else if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
 }
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ if(S.settings.wake) setWake(true); checkDue(); render(); }});
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ if(S.settings.wake) setWake(true); checkDue(); if(tab!=="more"&&!document.querySelector(".scrim")) render(); else renderTop(); }});
 
 /* ---------- UI: shell ---------- */
 let tab="today";
