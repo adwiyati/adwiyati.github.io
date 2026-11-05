@@ -423,7 +423,7 @@ function showAlarm(d){
     <div class="ring">${pill(64,"#ffffff")}</div>
     <div class="label" style="color:inherit;opacity:.85">حان موعد الدواء · ${fmtTime(d.time)}</div>
     <h2>${esc(m.name)}</h2>
-    <div class="dosebig">${esc(m.dose||"")}</div>
+    ${m.dose?`<div class="dosebig">${esc(m.dose)}</div>`:""}
     <div class="meta">${[food,dr?("د. "+esc(dr.name)):"",m.notes?esc(m.notes):""].filter(Boolean).join(" · ")}</div>
     ${alarmQueue.length?`<div class="more">و${alarmQueue.length} ${alarmQueue.length>1?"أدوية أخرى":"دواء آخر"} في نفس الوقت</div>`:""}
     <div class="btns">
