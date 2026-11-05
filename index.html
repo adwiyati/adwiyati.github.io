@@ -131,8 +131,12 @@ main .wrap{padding-block:18px;display:grid;gap:14px}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--teal);outline:none}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .times-edit{display:flex;flex-wrap:wrap;gap:8px}
-.times-edit .t{display:flex;align-items:center;gap:2px;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding-inline-end:2px}
-.times-edit .t input{border:0;background:transparent;padding:8px;min-height:40px;width:7.5em}
+.times-edit{flex-direction:column;align-items:stretch}
+.times-edit .t{display:flex;align-items:center;gap:6px;background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:6px 8px;direction:ltr;justify-content:flex-end}
+.times-edit .t .tn{margin-inline-end:auto;color:var(--muted);font-size:.85rem;direction:rtl}
+.times-edit .t select{font-family:var(--f-display);font-size:1.3rem;font-weight:600;font-variant-numeric:tabular-nums;min-height:48px;padding:4px 8px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.times-edit .t select[data-p="ap"]{font-size:1rem;direction:rtl}
+.times-edit .t b{font-size:1.3rem}
 .presets{display:flex;gap:6px;flex-wrap:wrap}
 .presets button{border:1.5px solid var(--line);background:transparent;border-radius:99px;padding:4px 12px;font-size:.85rem}
 .presets.seg button{padding:8px 14px;font-weight:500}
@@ -146,9 +150,10 @@ main .wrap{padding-block:18px;display:grid;gap:14px}
 .ring{width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.15);display:grid;place-items:center;animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{50%{transform:scale(1.08);box-shadow:0 0 0 18px rgba(255,255,255,.08)}}
 @media (prefers-reduced-motion:reduce){.ring{animation:none}}
-.alarm h2{font-size:2rem;overflow-wrap:anywhere}
-.alarm .dosebig{font-size:1.25rem;font-weight:600;background:rgba(255,255,255,.15);padding:6px 18px;border-radius:99px}
-.alarm .meta{opacity:.85}
+.alarm h2{font-size:clamp(2.4rem,11vw,3.4rem);line-height:1.15;overflow-wrap:anywhere}
+.alarm .dosebig{font-size:clamp(1.5rem,7vw,2rem);font-weight:700;background:rgba(255,255,255,.18);padding:8px 22px;border-radius:99px}
+.alarm .meta{opacity:.9;font-size:1.2rem}
+.alarm .label{font-size:1.1rem!important}
 .alarm .btns{display:grid;gap:10px;width:100%;margin-top:8px}
 .alarm .btn{padding:14px;font-size:1.05rem}
 .alarm .btn.take{background:#fff;color:var(--teal)}
@@ -192,7 +197,7 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const APP_VERSION="1.6";
+const APP_VERSION="1.7";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:"",gender:"female"}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
@@ -260,7 +265,7 @@ const pill=(size=34,c1="currentColor")=>`<svg class="pill" width="${size}" heigh
 let AC=null, ringTimer=null, wakeLock=null;
 function audioReady(){return AC && AC.state==="running";}
 function unlockAudio(){
-  try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state!=="running") AC.resume().then(renderTop); }catch(e){}
+  try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state!=="running") AC.resume().then(renderTop); preloadClips(); }catch(e){}
   renderTop();
 }
 document.addEventListener("pointerdown",()=>{ if(!audioReady()) unlockAudio(); primeSpeech(); },{capture:true});
@@ -296,10 +301,34 @@ function voiceOptions(){
   return `<option value="">تلقائي حسب النوع</option>`+arVoices().map(v=>`<option value="${esc(v.voiceURI)}" ${S.settings.voiceURI===v.voiceURI?"selected":""}>${esc(v.name)}${isFemale(v)?" — نسائي":isMale(v)?" — رجالي":""}</option>`).join("");
 }
 // What the alarm says (Modern Standard Arabic).
+// Fallback text for the phone voice, used only if a recording is missing. The medicine name is shown, not spoken.
 function alarmSpeech(m){
-  const n=S.profile.name?`يا ${S.profile.name}، `:"";
   const food=FOOD[m.food||""];
-  return `${n}حان موعد الدواء. تناوَل ${m.name}${m.dose?"، "+m.dose:""}${food?"، "+food:""}. مع تمنياتنا لك بالصحة والعافية.`;
+  return `حان موعد الدواء. يُرجى تناوُل الجرعة ${food||"الآن"}. مع تمنياتنا بالصحة والعافية.`;
+}
+
+/* ---------- recorded voice messages (bundled mp3, work offline) ---------- */
+const CLIPS={}; let currentClip=null;
+const clipKey=m=>["before","after","with","empty","sleep"].includes(m.food)?m.food:"none";
+async function loadClip(name){
+  if(name in CLIPS) return CLIPS[name];
+  CLIPS[name]=(async()=>{ try{ const r=await fetch("voice/"+name+".mp3"); if(!r.ok) return null; const buf=await r.arrayBuffer();
+      return await new Promise((res,rej)=>AC.decodeAudioData(buf,res,rej)); }catch(e){ return null; } })();
+  return CLIPS[name];
+}
+function preloadClips(){ if(!AC) return; const g=wantMale()?"m":"f"; ["none","before","after","with","empty","sleep"].forEach(k=>loadClip(g+"-"+k)); }
+async function playReminder(m,done){
+  let finished=false; const end=()=>{ if(finished)return; finished=true; currentClip=null; done&&done(); };
+  if(!S.settings.speech){ setTimeout(end,1200); return; }
+  if(!AC) unlockAudio();
+  const k=clipKey(m), g=wantMale()?"m":"f", other=g==="m"?"f":"m";
+  let buf=null; if(AC){ buf=await loadClip(g+"-"+k) || await loadClip(other+"-"+k); }
+  if(buf){
+    try{ const src=AC.createBufferSource(), gain=AC.createGain(); gain.gain.value=Math.min(1.5,S.settings.volume*1.6);
+      src.buffer=buf; src.connect(gain).connect(AC.destination); src.onended=end; src.start(); currentClip=src;
+      setTimeout(end,(buf.duration+1.5)*1000); return; }catch(e){}
+  }
+  speak(alarmSpeech(m),end);
 }
 // Phones (iPhone especially) only allow speech after it was first started by a tap.
 function primeSpeech(){
@@ -338,19 +367,21 @@ const TONES={
   urgent:{name:"تنبيه عاجل",play(){[0,.45,.9].forEach(d=>note(700,d,.4,"sawtooth",.18,1300));}},
 };
 function chime(){ if(!AC) return; try{ (TONES[S.settings.tone]||TONES.chime).play(); }catch(e){} }
-// Ring cycle: chime + vibrate, then speak the medicine name and dose, then repeat until a button is pressed.
+// Ring cycle: tone + vibrate, then the recorded voice message, then repeat until a button is pressed.
 let ringing=false;
-function startRinging(text){
+function startRinging(m){
   stopRinging(); ringing=true; let n=0;
   const cycle=()=>{ if(!ringing)return;
     chime(); if(navigator.vibrate) try{navigator.vibrate([400,200,400,200,800]);}catch(e){}
-    const say = S.settings.speech && HAS_TTS && n<8; n++;
-    if(say) ringTimer=setTimeout(()=>{ if(!ringing)return; speak(text,()=>{ if(ringing) ringTimer=setTimeout(cycle,900); }); },1700);
+    const say = S.settings.speech && n<8; n++;
+    if(say) ringTimer=setTimeout(()=>{ if(!ringing)return; playReminder(m,()=>{ if(ringing) ringTimer=setTimeout(cycle,900); }); },1700);
     else ringTimer=setTimeout(cycle,3200);
   };
   cycle();
 }
-function stopRinging(){ ringing=false; if(ringTimer){clearTimeout(ringTimer);ringTimer=null;} try{ if(HAS_TTS) speechSynthesis.cancel();}catch(e){} if(navigator.vibrate) try{navigator.vibrate(0);}catch(e){} }
+function stopRinging(){ ringing=false; if(ringTimer){clearTimeout(ringTimer);ringTimer=null;}
+  try{ currentClip&&currentClip.stop(); }catch(e){} currentClip=null;
+  try{ if(HAS_TTS) speechSynthesis.cancel();}catch(e){} if(navigator.vibrate) try{navigator.vibrate(0);}catch(e){} }
 
 let SWREG=null;
 if("serviceWorker" in navigator && location.protocol.startsWith("http")){
@@ -408,8 +439,7 @@ function showAlarm(d){
     else { if(!d.key.startsWith("test|")){S.log[d.key]=a; save();} toast(a==="taken"?"تم تسجيل الجرعة ✓":"تم تخطي الجرعة"); }
     render(); setTimeout(checkDue,300);
   });
-  const text=alarmSpeech(m);
-  startRinging(text);
+  startRinging(m);
   systemNotify("💊 حان موعد "+m.name,(m.dose||"")+(food?" · "+food:""),d.key);
 }
 
@@ -570,14 +600,12 @@ function vMore(){
   <div class="card"><div class="field"><label for="pname">اسم صاحب التطبيق</label><input id="pname" value="${esc(S.profile.name)}" placeholder="اكتب اسمك"></div></div>
   <div class="card set-list">
     <div class="set-item"><div><b>تجربة المنبّه</b><small>اسمع صوت التنبيه والنطق الآن</small></div><button class="btn sm" id="testAlarm">تجربة</button></div>
-    <div class="set-item"><div><b>نطق اسم الدواء والجرعة</b><small>يقرأ التنبيه بصوت عربي</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="نطق اسم الدواء"></div>
+    <div class="set-item"><div><b>رسالة صوتية مع المنبّه</b><small>«حان موعد الدواء…» بصوت مسجّل. اسم الدواء يظهر بخط كبير على الشاشة</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="رسالة صوتية مع المنبّه"></div>
     <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 180px"><b>نغمة المنبّه</b><small>اختر نغمة واسمعها</small></div>
       <div class="row"><select id="tone" class="btn ghost sm" aria-label="نغمة المنبّه">${Object.entries(TONES).map(([k,t])=>`<option value="${k}" ${S.settings.tone===k?"selected":""}>${t.name}</option>`).join("")}</select><button class="btn sm ghost" id="playTone" aria-label="تشغيل النغمة">▶</button></div></div>
-    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 160px"><b>نوع الصوت</b><small>الصوت الذي يقرأ اسم الدواء والجرعة</small></div>
+    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 160px"><b>نوع الصوت</b><small>صوت الرسالة المسجّلة مع المنبّه</small></div>
       <div class="presets seg" id="gender"><button type="button" data-g="female" aria-pressed="${!wantMale()}">نسائي</button><button type="button" data-g="male" aria-pressed="${wantMale()}">رجالي</button></div></div>
-    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 160px"><b>اختيار صوت محدد</b><small>اختياري، من الأصوات العربية الموجودة على هاتفك</small></div>
-      <select id="voice" class="btn ghost sm" aria-label="اختيار صوت محدد" style="max-width:100%">${voiceOptions()}</select></div>
-    <div class="set-item"><div><b>تجربة النطق</b><small id="voiceInfo">${voiceInfo()}</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
+    <div class="set-item"><div><b>تجربة الرسالة الصوتية</b><small>اسمع الرسالة بالصوت المختار</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
     <div class="set-item"><div><b>مستوى الصوت</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="مستوى الصوت"></div>
     <div class="set-item"><div><b>مدة الغفوة</b></div><select id="snz" class="btn ghost sm" aria-label="مدة الغفوة">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} دقائق</option>`).join("")}</select></div>
     <div class="set-item"><div><b>إشعارات الهاتف</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">تفعيل</button>':""}</div>
@@ -600,7 +628,7 @@ function vMore(){
     <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">حذف كل البيانات</button></div>
   </div>
   <div class="card set-list">
-    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>نطق بالفصحى، صوت نسائي أو رجالي، ونغمات المنبّه</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
+    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>رسائل صوتية مسجّلة، اختيار الساعة والدقيقة بسهولة، وخط أكبر للمنبّه</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
   </div>
   <p class="hint" style="text-align:center">يعمل بدون إنترنت · لا يرسل أي بيانات لأي خادم</p>`;
   $("#forceUpd").onclick=forceUpdate;
@@ -612,13 +640,11 @@ function vMore(){
   $("#tone").onchange=e=>{S.settings.tone=e.target.value;save();unlockAudio();setTimeout(chime,120);};
   $("#playTone").onclick=()=>{unlockAudio();setTimeout(chime,120);};
   $("#gender").onclick=e=>{const b=e.target.closest("[data-g]");if(!b)return; S.settings.gender=b.dataset.g; S.settings.voiceURI=""; save();
-    $("#gender").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); $("#voice").innerHTML=voiceOptions();
-    const vi=$("#voiceInfo"); if(vi) vi.textContent=voiceInfo(); $("#testSpeak").click(); };
-  $("#voice").onchange=e=>{S.settings.voiceURI=e.target.value;save();const vi=$("#voiceInfo");if(vi)vi.textContent=voiceInfo();$("#testSpeak").click();};
-  $("#testSpeak").onclick=()=>{ speechPrimed=true; if(!HAS_TTS){toast("هذا المتصفح لا يدعم النطق");return;}
+    $("#gender").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); $("#testSpeak").click(); };
+  $("#testSpeak").onclick=()=>{ unlockAudio(); stopRinging();
     const was=S.settings.speech; S.settings.speech=true;
-    const m=S.meds.find(x=>!x.prn)||{name:"فيتامين د",dose:"كبسولة واحدة",food:"after"}; speak(alarmSpeech(m));
-    S.settings.speech=was; setTimeout(()=>{ const vi=$("#voiceInfo"); if(vi) vi.textContent=voiceInfo(); },800); };
+    const m=S.meds.find(x=>!x.prn)||{name:"فيتامين د",dose:"كبسولة واحدة",food:"after"};
+    playReminder(m); S.settings.speech=was; };
   $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:"دواء تجريبي",dose:"قرص واحد",food:"after",id:"demo"};
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
   const a=$("#askN"); if(a) a.onclick=async()=>{try{await Notification.requestPermission();}catch(e){} vMore();};
@@ -752,8 +778,16 @@ function medSheet(m,rxId){
     <p class="err" id="er" hidden></p>
     <button class="btn block" type="submit">حفظ الدواء</button>${del?del.html:""}`,
   (f,close)=>{ if(del)del.bind(f,close);
-    const drawT=()=>{ $("#tl").innerHTML=times.map((t,i)=>`<div class="t"><input type="time" value="${t}" data-i="${i}" aria-label="موعد ${i+1}">${times.length>1?`<button type="button" class="icon-btn" data-rm="${i}" aria-label="حذف الموعد">${I.x}</button>`:""}</div>`).join("");
-      $("#tl").querySelectorAll("input").forEach(inp=>inp.onchange=()=>{times[inp.dataset.i]=inp.value;});
+    // Hour, minute and AM/PM as three large lists: easier than the phone's clock picker and allows any minute.
+    const drawT=()=>{ $("#tl").innerHTML=times.map((t,i)=>{ let [h,mi]=t.split(":").map(Number); const pm=h>=12; const h12=h%12||12;
+        return `<div class="t" data-i="${i}"><span class="tn">${i+1}</span>
+        <select data-p="h" aria-label="الساعة للموعد ${i+1}">${Array.from({length:12},(_,k)=>k+1).map(x=>`<option value="${x}" ${x===h12?"selected":""}>${x}</option>`).join("")}</select>
+        <b>:</b>
+        <select data-p="m" aria-label="الدقيقة للموعد ${i+1}">${Array.from({length:60},(_,k)=>k).map(x=>`<option value="${x}" ${x===mi?"selected":""}>${pad(x)}</option>`).join("")}</select>
+        <select data-p="ap" aria-label="صباحاً أو مساءً للموعد ${i+1}"><option value="am" ${!pm?"selected":""}>صباحاً</option><option value="pm" ${pm?"selected":""}>مساءً</option></select>
+        ${times.length>1?`<button type="button" class="icon-btn" data-rm="${i}" aria-label="حذف الموعد">${I.x}</button>`:""}</div>`;}).join("");
+      $("#tl").querySelectorAll(".t").forEach(row=>row.onchange=()=>{ const g=p=>row.querySelector(`[data-p="${p}"]`).value;
+        let h=Number(g("h"))%12; if(g("ap")==="pm") h+=12; times[row.dataset.i]=pad(h)+":"+pad(Number(g("m"))); });
       $("#tl").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{times.splice(b.dataset.rm,1);drawT();}); };
     drawT();
     const drawK=()=>{ $("#kind").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String((b.dataset.k==="1")===prn)));
