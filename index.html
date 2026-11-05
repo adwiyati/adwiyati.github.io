@@ -169,6 +169,7 @@ main .wrap{padding-block:18px;display:grid;gap:14px}
 .presets{display:flex;gap:6px;flex-wrap:wrap}
 .presets button{border:1.5px solid var(--line);background:transparent;border-radius:99px;padding:4px 12px;font-size:.85rem}
 .presets.seg button{padding:8px 14px;font-weight:500}
+.lang-sw button{min-width:96px}
 .presets button[aria-pressed="true"]{background:var(--teal);color:var(--teal-ink);border-color:var(--teal)}
 .err{color:var(--bad);font-size:.88rem;margin:0}
 .hint{color:var(--muted);font-size:.85rem;margin:0}
@@ -222,15 +223,15 @@ textarea.code{font-family:ui-monospace,Consolas,monospace;font-size:.78rem;direc
 <script>
 (function(){
 "use strict";
-document.documentElement.lang="ar"; document.documentElement.dir="rtl";
+
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const APP_VERSION="2.2";
+const APP_VERSION="2.3";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:"",gender:"female"}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast("تعذّر الحفظ على هذا الجهاز");} scheduleNativeSoon();}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast(""+T("تعذّر الحفظ على هذا الجهاز")+"");} scheduleNativeSoon();}
 
 /* ---------- Android app: phone alarms that ring while the app is closed ---------- */
 const NATIVE=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
@@ -247,8 +248,8 @@ async function nativeSetup(){
   if(!LN) return;
   try{
     let p=await LN.checkPermissions(); if(p.display!=="granted") p=await LN.requestPermissions();
-    for(const g of ["f","m"]) await LN.createChannel({id:"alarm_"+g,name:g==="f"?"منبّه الدواء - صوت نسائي":"منبّه الدواء - صوت رجالي",
-      description:"تنبيهات مواعيد الأدوية",importance:5,visibility:1,sound:"voice_"+g+".mp3",vibration:true,lights:true,lightColor:"#14504F"});
+    for(const g of ["f","m","en_f","en_m"]) await LN.createChannel({id:"alarm_"+g,name:(g.endsWith("f")?""+T("منبّه الدواء - صوت نسائي")+"":""+T("منبّه الدواء - صوت رجالي")+"")+(g.startsWith("en")?" (EN)":""),
+      description:""+T("تنبيهات مواعيد الأدوية")+"",importance:5,visibility:1,sound:"voice_"+g+".mp3",vibration:true,lights:true,lightColor:"#14504F"});
     LN.addListener("localNotificationActionPerformed",()=>{ render(); setTimeout(checkDue,400); });
     await checkExact(); nativeReady=true; scheduleNative(); render();
   }catch(e){ console.warn("native setup",e); }
@@ -259,25 +260,38 @@ async function scheduleNative(){
   if(!LN||!nativeReady) return;
   try{
     const pend=await LN.getPending(); if(pend.notifications.length) await LN.cancel({notifications:pend.notifications.map(n=>({id:n.id}))});
-    const list=[], now=Date.now(), ch="alarm_"+(wantMale()?"m":"f"), DAYS=14;
+    const list=[], now=Date.now(), ch="alarm_"+(LANG==="en"?"en_":"")+(wantMale()?"m":"f"), DAYS=14;
     for(let i=0;i<DAYS&&list.length<440;i++){ const k=addDays(today(),i); const [y,mo,da]=k.split("-").map(Number);
       dosesFor(k).forEach(d=>{ if(d.status) return; const [h,mi]=d.time.split(":").map(Number); const at=new Date(y,mo-1,da,h,mi,0);
         const food=FOOD[d.med.food||""]; const body=`${d.med.name}${d.med.dose?" — "+d.med.dose:""}${food?" · "+food:""}`;
         const base={body,largeBody:body,channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",extra:{key:d.key}};
-        if(at.getTime()>now) list.push({...base,id:hid(d.key),title:"💊 حان موعد الدواء",schedule:{at,allowWhileIdle:true}});
-        const f=new Date(at.getTime()+15*60000); if(f.getTime()>now) list.push({...base,id:hid(d.key+"|f"),title:"⏰ تذكير: لم تُسجَّل الجرعة بعد",schedule:{at:f,allowWhileIdle:true}});
+        if(at.getTime()>now) list.push({...base,id:hid(d.key),title:"💊 "+T("حان موعد الدواء")+"",schedule:{at,allowWhileIdle:true}});
+        const f=new Date(at.getTime()+15*60000); if(f.getTime()>now) list.push({...base,id:hid(d.key+"|f"),title:"⏰ "+T("تذكير: لم تُسجَّل الجرعة بعد")+"",schedule:{at:f,allowWhileIdle:true}});
       });
     }
-    if(S.meds.some(m=>!m.prn&&!m.paused)) list.push({id:hid("refresh"),title:"أدويتي",body:"افتح التطبيق مرة واحدة لتجديد منبّهات الأسبوعين القادمين",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(now+(DAYS-1)*864e5),allowWhileIdle:true}});
+    if(S.meds.some(m=>!m.prn&&!m.paused)) list.push({id:hid("refresh"),title:""+T("أدويتي")+"",body:""+T("افتح التطبيق مرة واحدة لتجديد منبّهات الأسبوعين القادمين")+"",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(now+(DAYS-1)*864e5),allowWhileIdle:true}});
     if(list.length) await LN.schedule({notifications:list});
   }catch(e){ console.warn("schedule",e); }
 }
 async function nativeTest(){
-  if(!LN) return; const ch="alarm_"+(wantMale()?"m":"f");
-  try{ await LN.schedule({notifications:[{id:hid("test"+Date.now()),title:"💊 تجربة منبّه أدويتي",body:"المنبّهات تعمل والتطبيق مغلق",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(Date.now()+10000),allowWhileIdle:true}}]});
-    toast("سيصلك تنبيه بعد 10 ثوانٍ. يمكنك إغلاق التطبيق الآن"); }catch(e){ toast("تعذّر ضبط التنبيه. تأكد من السماح بالإشعارات"); }
+  if(!LN) return; const ch="alarm_"+(LANG==="en"?"en_":"")+(wantMale()?"m":"f");
+  try{ await LN.schedule({notifications:[{id:hid("test"+Date.now()),title:"💊 "+T("تجربة منبّه أدويتي")+"",body:""+T("المنبّهات تعمل والتطبيق مغلق")+"",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(Date.now()+10000),allowWhileIdle:true}}]});
+    toast(""+T("سيصلك تنبيه بعد 10 ثوانٍ. يمكنك إغلاق التطبيق الآن")+""); }catch(e){ toast(""+T("تعذّر ضبط التنبيه. تأكد من السماح بالإشعارات")+""); }
 }
 load();
+
+/* ---------- language: Arabic or English ---------- */
+// New users get their phone's language; anyone who already has data stays in Arabic until they switch.
+const LANG=S.settings.lang||((S.meds.length||S.profile.name)?"ar":(/^ar/i.test(navigator.language||"ar")?"ar":"en"));
+const LOC=LANG==="en"?"en-GB":"ar-EG";
+const EN={"تعذّر الحفظ على هذا الجهاز":"Couldn't save on this device","منبّه الدواء - صوت نسائي":"Medicine alarm - female voice","منبّه الدواء - صوت رجالي":"Medicine alarm - male voice","تنبيهات مواعيد الأدوية":"Medicine time reminders","حان موعد الدواء":"Time for your medicine","تذكير: لم تُسجَّل الجرعة بعد":"Reminder: dose not recorded yet","أدويتي":"Adwiyati","افتح التطبيق مرة واحدة لتجديد منبّهات الأسبوعين القادمين":"Open the app once to renew alarms for the next two weeks","تجربة منبّه أدويتي":"Adwiyati alarm test","المنبّهات تعمل والتطبيق مغلق":"Alarms work while the app is closed","سيصلك تنبيه بعد 10 ثوانٍ. يمكنك إغلاق التطبيق الآن":"You'll get an alert in 10 seconds. You can close the app now","تعذّر ضبط التنبيه. تأكد من السماح بالإشعارات":"Couldn't set the alarm. Make sure notifications are allowed","صباحاً":"AM","مساءً":"PM","ص":"AM","م":"PM","قبل الأكل":"before meals","بعد الأكل":"after meals","مع الأكل":"with meals","على معدة فارغة":"on an empty stomach","قبل النوم":"at bedtime","باطنة":"Internal medicine","قلب وأوعية دموية":"Cardiology","سكر وغدد صماء":"Diabetes & endocrinology","عظام":"Orthopedics","أنف وأذن وحنجرة":"ENT","عيون":"Ophthalmology","جلدية":"Dermatology","أطفال":"Pediatrics","نساء وتوليد":"Obstetrics & gynecology","مخ وأعصاب":"Neurology","نفسية":"Psychiatry","صدر":"Pulmonology","كلى":"Nephrology","مسالك بولية":"Urology","جهاز هضمي وكبد":"Gastroenterology & hepatology","أسنان":"Dentistry","روماتيزم":"Rheumatology","أورام":"Oncology","طب أسرة":"Family medicine","تلقائي حسب النوع":"Automatic by type","نسائي":"Female","رجالي":"Male","حان موعد الدواء. يُرجى تناوُل الجرعة":"Time for your medicine. Please take your dose","الآن":"now","مع تمنياتنا بالصحة والعافية":"Wishing you good health","رنين هادئ":"Gentle chime","جرس":"Bell","منبّه كلاسيكي":"Classic alarm","ماريمبا":"Marimba","نبضات ناعمة":"Soft pulses","عصافير":"Birds","تنبيه عاجل":"Urgent alert","موعد الدواء":"Medicine time","لعلاج":"For","د":"Dr","د@min":"min","و":"and ","أدوية أخرى":"other medicines","دواء آخر":"other medicine","في نفس الوقت":"at the same time","أخذت الدواء":"I took it","ذكّرني بعد":"Remind me in","دقائق":"minutes","تخطّي هذه الجرعة":"Skip this dose","سيتم التذكير بعد":"I'll remind you in","تم تسجيل الجرعة":"Dose recorded","تم تخطي الجرعة":"Dose skipped","حان موعد":"Time for","الجهاز لم يسمح بإبقاء الشاشة مضاءة":"The device didn't allow keeping the screen on","اليوم":"Today","الوصفات":"Prescriptions","الأطباء":"Doctors","التقارير":"Reports","الإعدادات":"Settings","س":"h","غداً":"Tomorrow","لا توجد أدوية بعد":"No medicines yet","أضف طبيباً ثم وصفته وأدويتها":"Add a doctor, then their prescription and medicines","لا جرعات متبقية":"No doses left","أحسنت، أنهيت أدوية اليوم":"Well done, you've finished today's medicines","المس الزر لتفعيل صوت المنبّه":"Tap the button to turn on the alarm sound","تفعيل الصوت":"Turn on sound","أهلاً،":"Hello,","خطوة واحدة ليرنّ المنبّه في موعده بالضبط":"One step so the alarm rings exactly on time","اضغط الزر ثم فعّل «السماح» أمام أدويتي، وارجع للتطبيق":"Tap the button, turn on \"Allow\" next to Adwiyati, then come back","السماح بالمنبّهات":"Allow alarms","لاحقاً":"Later","جرعات اليوم":"Today's doses","من":"of","تم":"Done","تخطّي":"Skipped","فاتت":"Missed","تراجع":"Undo","أخذت":"Took it","لا توجد جرعات مجدولة اليوم":"No doses scheduled today","سجّل وصفة من طبيبك، أو أضف دواءً بدون وصفة مثل فيتامين أو مسكّن":"Add a prescription from your doctor, or a medicine without one, like a vitamin or a painkiller","إضافة وصفة":"Add prescription","إضافة طبيب":"Add doctor","دواء بدون وصفة":"Non-prescription medicine","عند اللزوم":"As needed","سجّل الجرعة عندما تأخذها":"Record a dose when you take it","آخر جرعة":"Last dose","لم تُؤخذ بعد":"Not taken yet","وصلت للحد اليومي":"Daily limit reached","الجرعة التالية بعد":"Next dose in","حذف آخر جرعة مسجلة":"Delete the last recorded dose","الالتزام خلال آخر 7 أيام":"Last 7 days","ال":"","التطبيق هدية لمرضى البشرية":"This app is a gift to patients everywhere","تمنياتي لكم بالشفاء":"Wishing you a full recovery","م/ محسن يوسف":"Eng. Mohsen Youssef","تم حذف آخر جرعة":"Last dose deleted","دقيقة":"min","تنبيه":"Note","أخذت الحد الأقصى المسموح اليوم":"You've taken the daily maximum","جرعات)":"doses)","لم تمر المدة المحددة بين الجرعات. الجرعة التالية بعد":"The minimum time between doses hasn't passed. Next dose in","راجع الطبيب أو الصيدلي قبل زيادة الجرعة":"Check with your doctor or pharmacist before taking more","تسجيل الجرعة على أي حال":"Record the dose anyway","إلغاء":"Cancel","تم تسجيل":"Recorded","الساعة":"at","كل":"every","ساعات على الأقل":"hours at least","حد أقصى":"max","في اليوم":"per day","لمدة":"for","يوم":"days","مستمر":"ongoing","متوقف":"Paused","انتهى":"Finished","تعديل":"Edit","أدوية بدون وصفة":"Non-prescription medicines","إضافة":"Add","فيتامينات ومكملات ومسكّنات تأخذها من نفسك، بمواعيد ثابتة أو عند اللزوم":"Vitamins, supplements and painkillers you take yourself, on a schedule or as needed","لا توجد أدوية بدون وصفة":"No non-prescription medicines","أضف فيتاميناً يومياً بمواعيد ثابتة، أو مسكّناً تأخذه عند اللزوم فقط":"Add a daily vitamin on a schedule, or a painkiller you take only as needed","الوصفات الطبية":"Prescriptions","وصفة جديدة":"New prescription","لا توجد وصفات":"No prescriptions","سجّل كل وصفة باسم الطبيب الذي كتبها، ثم أضف إليها الأدوية ومواعيدها":"Record each prescription under the doctor who wrote it, then add its medicines and times","طبيب غير محدد":"Unknown doctor","تعديل الوصفة":"Edit prescription","إضافة دواء لهذه الوصفة":"Add a medicine to this prescription","أطبائي":"My doctors","طبيب جديد":"New doctor","لم تضف أطباء بعد":"No doctors yet","أضف اسم الطبيب وتخصصه ورقم العيادة لتربط به وصفاته":"Add the doctor's name, specialty and clinic number to link their prescriptions","؟":"?","وصفة":"prescription","وصفات":"prescriptions","التقارير الشهرية":"Monthly reports","الأحدث أولاً":"Newest first","لا توجد بيانات بعد":"No data yet","عندما تضيف أطباءك ووصفاتهم وتسجّل جرعاتك، يظهر هنا ملخص لكل شهر":"Once you add your doctors and prescriptions and record your doses, a summary for each month appears here","طبيب":"doctor","أطباء":"doctors","الشهر الحالي":"This month","لا جرعات":"No doses","التزام":"Taken","جرعة أُخذت":"taken","نسبة الالتزام":"Doses taken","الوصفات خلال الشهر":"Prescriptions this month","لا توجد وصفات جديدة في هذا الشهر":"No new prescriptions this month","الأطباء الذين زرتهم":"Doctors you visited","أدوية عند اللزوم":"As-needed medicines","دواء محذوف":"Deleted medicine","مرة":"times","مفعّلة":"On","مرفوضة من المتصفح":"Blocked by the browser","غير مفعّلة":"Off","غير مدعومة هنا":"Not supported here","اسم صاحب التطبيق":"Your name","اكتب اسمك":"Type your name","تجربة المنبّه":"Test the alarm","اسمع صوت التنبيه والنطق الآن":"Hear the alarm sound and voice now","تجربة":"Test","رسالة صوتية مع المنبّه":"Voice message with the alarm","حان موعد الدواء…» بصوت مسجّل. اسم الدواء يظهر بخط كبير على الشاشة":"Time for your medicine…\" in a recorded voice. The medicine name shows in large text","نغمة المنبّه":"Alarm tone","اختر نغمة واسمعها":"Pick a tone to hear it","تشغيل النغمة":"Play tone","نوع الصوت":"Voice","صوت الرسالة المسجّلة مع المنبّه":"The recorded message's voice","تجربة الرسالة الصوتية":"Test the voice message","اسمع الرسالة بالصوت المختار":"Hear the message in the chosen voice","اسمع":"Listen","مستوى الصوت":"Volume","مدة الغفوة":"Snooze length","إشعارات الهاتف":"Phone notifications","تفعيل":"Turn on","إبقاء الشاشة مضاءة":"Keep screen on","يضمن رنين المنبّه أثناء فتح التطبيق":"Makes sure the alarm rings while the app is open","حذف كل البيانات":"Delete all data","يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف":"Deletes doctors, prescriptions, medicines and history from this phone","إصدار التطبيق":"App version","تقارير شهرية للأطباء والوصفات، والأحدث يظهر أولاً":"Arabic and English, monthly reports, newest first","تحديث الآن":"Update now","مجاني للجميع":"Free for everyone","يعمل بدون إنترنت":"Works offline","لا يرسل أي بيانات لأي خادم":"Sends no data to any server","سياسة الخصوصية":"Privacy policy","تم حفظ الاسم":"Name saved","فيتامين د":"Vitamin D","كبسولة واحدة":"1 capsule","دواء تجريبي":"Test medicine","قرص واحد":"1 tablet","متأكد؟ لا يمكن التراجع":"Are you sure? This can't be undone","نعم، احذف":"Yes, delete","تم حذف البيانات":"Data deleted","اتصل بالإنترنت أولاً ثم اضغط تحديث":"Connect to the internet first, then tap Update","جاري التحديث":"Updating","هذا المتصفح لا يدعم النطق. جرّب":"This browser can't speak. Try","على أندرويد أو":"on Android or","على آيفون":"on iPhone","الصوت المستخدم":"Voice in use","نسائي)":"female)","رجالي)":"male)","لم يُعثر على صوت عربي. من الإعدادات":"No voice found. In Settings","تسهيلات الاستخدام":"Accessibility","المحتوى المنطوق":"Spoken Content","الأصوات":"Voices","العربية، نزّل صوتاً":"download a voice","لم يُعثر على صوت عربي. من إعدادات الهاتف":"No voice found. In phone settings","اللغة والإدخال":"Language & input","تحويل النص إلى كلام":"Text-to-speech","محرك":"engine","تثبيت بيانات الصوت":"Install voice data","العربية":"English","اسمح للمنبّه بالرنين في موعده":"Let the alarm ring on time","اضغط الزر ثم فعّل «السماح» أمام أدويتي":"Tap the button, then turn on \"Allow\" next to Adwiyati","المنبّه يرنّ حتى والتطبيق مغلق":"The alarm rings even when the app is closed","سيرنّ الهاتف في موعد كل جرعة ويُظهر اسم الدواء. لا تحتاج لفتح التطبيق":"Your phone rings at each dose time and shows the medicine name. You don't need to open the app","جرّب المنبّه الآن":"Test the alarm now","إذا لم يرنّ على هاتفك: إعدادات الهاتف":"If it doesn't ring: phone Settings","التطبيقات":"Apps","البطارية":"Battery","اختر «بلا قيود»":"choose \"Unrestricted\"","على الآيفون":"On iPhone","المنبّه يرنّ والتطبيق مفتوح. اترك التطبيق مفتوحاً وفعّل «إبقاء الشاشة مضاءة» بالأعلى":"The alarm rings while the app is open. Leave it open and turn on \"Keep screen on\" above","أضف المواعيد إلى تقويم الآيفون":"Add the times to the iPhone calendar","التقويم يرنّ في موعد كل دواء حتى والتطبيق مغلق":"The calendar rings at each medicine time, even when the app is closed","حمّل تطبيق «أدويتي» لأندرويد":"Get the Adwiyati app for Android","ليرنّ المنبّه في موعد الدواء حتى والتطبيق مغلق. مجاني بالكامل":"So the alarm rings at medicine time even when the app is closed. Completely free","تحميل التطبيق":"Download the app","بعد التحميل افتح الملف واضغط «تثبيت». إذا طلب الهاتف إذناً، اضغط «الإعدادات» ثم «السماح من هذا المصدر»":"After downloading, open the file and tap \"Install\". If the phone asks, tap \"Settings\", then \"Allow from this source\"","تمت الاستعادة":"Restored","الملف أو النص غير صالح كنسخة احتياطية":"Not a valid backup","تم تجهيز الملف":"File ready","لم يسمح المتصفح بحفظ الملف":"The browser didn't allow saving the file","لا توجد أدوية نشطة لإضافتها":"No active medicines to add","إغلاق":"Close","تأكيد الحذف؟":"Delete?","تم الحذف":"Deleted","حذف الطبيب":"Delete doctor","تعديل بيانات الطبيب":"Edit doctor","اسم الطبيب":"Doctor's name","مثال: أحمد سامي":"e.g. Ahmed Samy","التخصص":"Specialty","اختر أو اكتب التخصص":"Pick or type a specialty","رقم العيادة":"Clinic phone","العيادة / المستشفى":"Clinic / hospital","حفظ":"Save","اكتب اسم الطبيب":"Type the doctor's name","تمت إضافة الطبيب":"Doctor added","تم الحفظ":"Saved","أضف طبيباً أولاً":"Add a doctor first","حذف الوصفة وأدويتها":"Delete prescription and its medicines","الطبيب":"Doctor","تاريخ الوصفة":"Prescription date","التشخيص (اسم المرض)":"Diagnosis (illness)","مثال: ضغط الدم":"e.g. Blood pressure","ضغط الدم":"Blood pressure","السكر":"Diabetes","الكوليسترول":"Cholesterol","القلب":"Heart","الغدة الدرقية":"Thyroid","المعدة":"Stomach","المفاصل":"Joints","الحساسية":"Allergy","حفظ ثم إضافة الأدوية":"Save, then add medicines","حذف الدواء":"Delete medicine","إضافة دواء":"Add medicine","تعديل الدواء":"Edit medicine","للفيتامينات والمكملات والمسكّنات التي تأخذها بدون وصفة طبيب":"For vitamins, supplements and painkillers you take without a prescription","اسم الدواء":"Medicine name","مثال: فيتامين د 1000 وحدة":"e.g. Vitamin D 1000 IU","مثال: كونكور 5 مجم":"e.g. Concor 5 mg","فيتامين سي":"Vitamin C","فيتامين ب":"Vitamin B","أوميجا":"Omega-","حديد":"Iron","كالسيوم":"Calcium","ماغنسيوم":"Magnesium","زنك":"Zinc","مالتي فيتامين":"Multivitamin","باراسيتامول":"Paracetamol","إيبوبروفين":"Ibuprofen","مضاد حموضة":"Antacid","دواء برد":"Cold medicine","الجرعة":"Dose","مثال: قرص واحد":"e.g. 1 tablet","نصف قرص":"Half a tablet","قرصان":"2 tablets","ملعقة صغيرة 5 مل":"1 teaspoon (5 ml)","ملعقة كبيرة 15 مل":"1 tablespoon (15 ml)","نقطتان":"2 drops","حقنة واحدة":"1 injection","بخة واحدة":"1 puff","وحدات أنسولين":"Insulin units","فوار واحد":"1 effervescent tablet","طريقة الأخذ":"How it's taken","مواعيد ثابتة يومياً":"Fixed daily times","عند اللزوم فقط":"Only as needed","مثل المسكّنات: لا يرن له منبّه، وتسجّل الجرعة من شاشة «اليوم» عندما تأخذها. التطبيق ينبّهك إذا أخذتها قبل المدة المحددة أو تجاوزت الحد اليومي":"Like painkillers: no alarm rings. Record each dose on the Today screen when you take it. The app warns you if it's too soon or you pass the daily limit","أقل مدة بين الجرعتين (ساعات)":"Minimum hours between doses","مثال":"e.g.","أقصى عدد جرعات في اليوم":"Maximum doses per day","مواعيد الجرعات خلال اليوم":"Dose times during the day","مرتين":"Twice","مرات":"times","كل 8 ساعات":"Every 8 hours","إضافة موعد":"Add a time","التعليمات":"Instructions","بدون تعليمات":"No instructions","يبدأ من":"Starts on","المدة بالأيام":"Duration (days)","فارغ":"Empty","لعلاج (اسم المرض)":"For (illness)","القولون":"Colon","الصداع":"Headache","الربو":"Asthma","الأعصاب":"Nerves","البرد والإنفلونزا":"Cold & flu","فيتامينات ومكملات":"Vitamins & supplements","سيولة الدم":"Blood thinning","البروستاتا":"Prostate","هشاشة العظام":"Osteoporosis","ملاحظات":"Notes","اختياري":"Optional","إيقاف مؤقت للدواء":"Pause this medicine","لن تظهر جرعاته ولن يرن له منبّه":"Its doses won't show and no alarm will ring","إيقاف مؤقت":"Pause","حفظ الدواء":"Save medicine","الساعة للموعد":"Hour for time","الدقيقة للموعد":"Minute for time","صباحاً أو مساءً للموعد":"AM or PM for time","حذف الموعد":"Remove time","اكتب اسم الدواء":"Type the medicine name","أضف موعداً واحداً على الأقل":"Add at least one time","تمت إضافة الدواء ومواعيده":"Medicine and times added","أهلاً بك في أدويتي":"Welcome to Adwiyati","سجّل أطباءك ووصفاتهم وأدويتك، وسينبّهك التطبيق بصوت عند كل جرعة. كل البيانات تبقى على هاتفك فقط":"Record your doctors, prescriptions and medicines, and the app will remind you out loud at every dose. All your data stays on your phone","اسمك":"Your name","أضف بيانات تجريبية":"Add sample data","طبيب ووصفة ودواءان للتجربة، يمكنك حذفها لاحقاً":"Sample doctors, prescriptions and medicines to try. You can delete them later","ابدأ":"Start","منى عبد الرحمن":"Mona Abdelrahman","عيادة المعادي":"Maadi Clinic","كريم فوزي":"Karim Fawzy","متابعة ضغط":"Blood pressure follow-up","دواء الضغط (مثال)":"Blood pressure pill (sample)","أسبرين 81 (مثال)":"Aspirin 81 (sample)","ميتفورمين 500 (مثال)":"Metformin 500 (sample)","فيتامين د (مثال)":"Vitamin D (sample)","باراسيتامول 500 (مثال)":"Paracetamol 500 (sample)"};
+function T(k){ const base=k.split("@")[0]; if(LANG!=="en") return base; const v=EN[k]; return v===undefined?base:v; }
+function setLang(l){ S.settings.lang=l; save(); location.reload(); }
+document.documentElement.lang=LANG; document.documentElement.dir=LANG==="en"?"ltr":"rtl";
+{ const a=document.getElementById("app"); if(a){ a.dir=document.documentElement.dir; a.lang=LANG; } }
+const langSwitch=()=>`<div class="presets seg lang-sw" role="group" aria-label="Language / اللغة"><button type="button" data-lang="ar" aria-pressed="${LANG==="ar"}">العربية</button><button type="button" data-lang="en" aria-pressed="${LANG==="en"}">English</button></div>`;
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-lang]"); if(b&&b.dataset.lang!==LANG) setLang(b.dataset.lang); });
+
 
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
@@ -287,14 +301,15 @@ const pad=n=>String(n).padStart(2,"0");
 const dkey=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const today=()=>dkey(new Date());
 const toMin=t=>{const[a,b]=t.split(":").map(Number);return a*60+b};
-function fmtTime(t){let[h,m]=t.split(":").map(Number);const ap=h<12?"ص":"م";h=h%12||12;return h+":"+pad(m)+" "+ap;}
-const dayName=d=>d.toLocaleDateString("ar-EG",{weekday:"long"});
-const fmtDate=d=>d.toLocaleDateString("ar-EG",{weekday:"long",day:"numeric",month:"long"});
+function tCell(t){const[h,mi]=t.split(":").map(Number);return (h%12||12)+":"+pad(mi)+"<small>"+(h<12?""+T("صباحاً")+"":""+T("مساءً")+"")+"</small>";}
+function fmtTime(t){let[h,m]=t.split(":").map(Number);const ap=h<12?""+T("ص")+"":""+T("م")+"";h=h%12||12;return h+":"+pad(m)+" "+ap;}
+const dayName=d=>d.toLocaleDateString(LOC,{weekday:"long"});
+const fmtDate=d=>d.toLocaleDateString(LOC,{weekday:"long",day:"numeric",month:"long"});
 function addDays(k,n){const[y,m,d]=k.split("-").map(Number);const x=new Date(y,m-1,d+n);return dkey(x);}
 const doctor=id=>S.doctors.find(d=>d.id===id);
 const rxOf=id=>S.rx.find(r=>r.id===id);
-const FOOD={"":"","before":"قبل الأكل","after":"بعد الأكل","with":"مع الأكل","empty":"على معدة فارغة","sleep":"قبل النوم"};
-const SPECS=["باطنة","قلب وأوعية دموية","سكر وغدد صماء","عظام","أنف وأذن وحنجرة","عيون","جلدية","أطفال","نساء وتوليد","مخ وأعصاب","نفسية","صدر","كلى","مسالك بولية","جهاز هضمي وكبد","أسنان","روماتيزم","أورام","طب أسرة"];
+const FOOD={"":"","before":""+T("قبل الأكل")+"","after":""+T("بعد الأكل")+"","with":""+T("مع الأكل")+"","empty":""+T("على معدة فارغة")+"","sleep":""+T("قبل النوم")+""};
+const SPECS=[""+T("باطنة")+"",""+T("قلب وأوعية دموية")+"",""+T("سكر وغدد صماء")+"",""+T("عظام")+"",""+T("أنف وأذن وحنجرة")+"",""+T("عيون")+"",""+T("جلدية")+"",""+T("أطفال")+"",""+T("نساء وتوليد")+"",""+T("مخ وأعصاب")+"",""+T("نفسية")+"",""+T("صدر")+"",""+T("كلى")+"",""+T("مسالك بولية")+"",""+T("جهاز هضمي وكبد")+"",""+T("أسنان")+"",""+T("روماتيزم")+"",""+T("أورام")+"",""+T("طب أسرة")+""];
 
 function medActiveOn(m,k){
   if(m.paused) return false;
@@ -356,7 +371,7 @@ if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged"
 // Browsers don't report a voice's gender, so female voices are recognised by name.
 const FEMALE=/salma|laila|layla|leila|hoda|huda|zeina|zeinab|zainab|mariam|maryam|amira|amna|fatima|hala|rana|dalia|nour|noura|sara|yasmin|samira|farah|reem|rasha|mona|female|woman|سلمى|ليلى|هدى|زينة|مريم/i;
 const MALE=/maged|majed|shakir|hamed|tarek|naayf|naif|omar|ahmed|(^|[^e])male/i;
-const arVoices=()=>{ if(!VOICES.length) loadVoices(); return VOICES.filter(v=>/^ar([-_]|$)/i.test(v.lang)); };
+const arVoices=()=>{ if(!VOICES.length) loadVoices(); return VOICES.filter(v=>new RegExp("^"+LANG+"([-_]|$)","i").test(v.lang)); };
 const isFemale=v=>FEMALE.test(v.name);
 const isMale=v=>MALE.test(v.name)&&!FEMALE.test(v.name);
 const wantMale=()=>S.settings.gender==="male";
@@ -374,13 +389,13 @@ function voicePitch(v){
   return isFemale(v)?1:(isMale(v)?1.45:1.25);
 }
 function voiceOptions(){
-  return `<option value="">تلقائي حسب النوع</option>`+arVoices().map(v=>`<option value="${esc(v.voiceURI)}" ${S.settings.voiceURI===v.voiceURI?"selected":""}>${esc(v.name)}${isFemale(v)?" — نسائي":isMale(v)?" — رجالي":""}</option>`).join("");
+  return `<option value="">${T("تلقائي حسب النوع")}</option>`+arVoices().map(v=>`<option value="${esc(v.voiceURI)}" ${S.settings.voiceURI===v.voiceURI?"selected":""}>${esc(v.name)}${isFemale(v)?" — "+T("نسائي")+"":isMale(v)?" — "+T("رجالي")+"":""}</option>`).join("");
 }
 // What the alarm says (Modern Standard Arabic).
 // Fallback text for the phone voice, used only if a recording is missing. The medicine name is shown, not spoken.
 function alarmSpeech(m){
   const food=FOOD[m.food||""];
-  return `حان موعد الدواء. يُرجى تناوُل الجرعة ${food||"الآن"}. مع تمنياتنا بالصحة والعافية.`;
+  return `${T("حان موعد الدواء. يُرجى تناوُل الجرعة")} ${food||""+T("الآن")+""}. ${T("مع تمنياتنا بالصحة والعافية")}.`;
 }
 
 /* ---------- recorded voice messages (bundled mp3, work offline) ---------- */
@@ -392,12 +407,12 @@ async function loadClip(name){
       return await new Promise((res,rej)=>AC.decodeAudioData(buf,res,rej)); }catch(e){ return null; } })();
   return CLIPS[name];
 }
-function preloadClips(){ if(!AC) return; const g=wantMale()?"m":"f"; ["none","before","after","with","empty","sleep"].forEach(k=>loadClip(g+"-"+k)); }
+function preloadClips(){ if(!AC) return; const g=(LANG==="en"?"en-":"")+(wantMale()?"m":"f"); ["none","before","after","with","empty","sleep"].forEach(k=>loadClip(g+"-"+k)); }
 async function playReminder(m,done){
   let finished=false; const end=()=>{ if(finished)return; finished=true; currentClip=null; done&&done(); };
   if(!S.settings.speech){ setTimeout(end,1200); return; }
   if(!AC) unlockAudio();
-  const k=clipKey(m), g=wantMale()?"m":"f", other=g==="m"?"f":"m";
+  const k=clipKey(m), pre=LANG==="en"?"en-":"", g=pre+(wantMale()?"m":"f"), other=pre+(wantMale()?"f":"m");
   let buf=null; if(AC){ buf=await loadClip(g+"-"+k) || await loadClip(other+"-"+k); }
   if(buf){
     try{ const src=AC.createBufferSource(), gain=AC.createGain(); gain.gain.value=Math.min(1.5,S.settings.volume*1.6);
@@ -416,7 +431,7 @@ function speak(text,done){
   if(!S.settings.speech||!HAS_TTS){ setTimeout(end,1200); return; }
   try{
     const u=new SpeechSynthesisUtterance(text); const v=arabicVoice();
-    if(v){u.voice=v;u.lang=v.lang;} else u.lang="ar-SA";
+    if(v){u.voice=v;u.lang=v.lang;} else u.lang=LANG==="en"?"en-US":"ar-SA";
     // No known female voice on the phone: raise the pitch a little for a softer voice.
     u.pitch = voicePitch(v);
     u.rate=.92; u.volume=1; u.onend=end; u.onerror=end;
@@ -434,13 +449,13 @@ function note(f,dt,dur,type,amp,f2){
   o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.05);
 }
 const TONES={
-  chime:{name:"رنين هادئ",play(){[[880,0],[1175,.18],[1568,.36],[1175,.9],[1568,1.08],[2093,1.26]].forEach(([f,d])=>note(f,d,.5,"sine",.6));}},
-  bell:{name:"جرس",play(){[0,.8].forEach(d=>{note(660,d,1.6,"sine",.5);note(1320,d,1.1,"sine",.22);note(1980,d,.7,"sine",.12);note(2640,d,.4,"sine",.06);});}},
-  classic:{name:"منبّه كلاسيكي",play(){for(let i=0;i<4;i++){note(1046,i*.32,.12,"square",.22);note(1046,i*.32+.15,.12,"square",.22);}}},
-  marimba:{name:"ماريمبا",play(){[[523,0],[659,.15],[784,.3],[1046,.45],[784,.75],[1046,.9],[1318,1.05]].forEach(([f,d])=>{note(f,d,.35,"triangle",.7);note(f*4,d,.08,"sine",.1);});}},
-  soft:{name:"نبضات ناعمة",play(){[0,.55,1.1].forEach(d=>note(440,d,.45,"sine",.55,520));}},
-  birds:{name:"عصافير",play(){[0,.22,.5,.72,1.1,1.3].forEach((d,i)=>note(2400+(i%3)*300,d,.14,"sine",.3,3400+(i%2)*400));}},
-  urgent:{name:"تنبيه عاجل",play(){[0,.45,.9].forEach(d=>note(700,d,.4,"sawtooth",.18,1300));}},
+  chime:{name:""+T("رنين هادئ")+"",play(){[[880,0],[1175,.18],[1568,.36],[1175,.9],[1568,1.08],[2093,1.26]].forEach(([f,d])=>note(f,d,.5,"sine",.6));}},
+  bell:{name:""+T("جرس")+"",play(){[0,.8].forEach(d=>{note(660,d,1.6,"sine",.5);note(1320,d,1.1,"sine",.22);note(1980,d,.7,"sine",.12);note(2640,d,.4,"sine",.06);});}},
+  classic:{name:""+T("منبّه كلاسيكي")+"",play(){for(let i=0;i<4;i++){note(1046,i*.32,.12,"square",.22);note(1046,i*.32+.15,.12,"square",.22);}}},
+  marimba:{name:""+T("ماريمبا")+"",play(){[[523,0],[659,.15],[784,.3],[1046,.45],[784,.75],[1046,.9],[1318,1.05]].forEach(([f,d])=>{note(f,d,.35,"triangle",.7);note(f*4,d,.08,"sine",.1);});}},
+  soft:{name:""+T("نبضات ناعمة")+"",play(){[0,.55,1.1].forEach(d=>note(440,d,.45,"sine",.55,520));}},
+  birds:{name:""+T("عصافير")+"",play(){[0,.22,.5,.72,1.1,1.3].forEach((d,i)=>note(2400+(i%3)*300,d,.14,"sine",.3,3400+(i%2)*400));}},
+  urgent:{name:""+T("تنبيه عاجل")+"",play(){[0,.45,.9].forEach(d=>note(700,d,.4,"sawtooth",.18,1300));}},
 };
 function chime(){ if(!AC) return; try{ (TONES[S.settings.tone]||TONES.chime).play(); }catch(e){} }
 // Ring cycle: tone + vibrate, then the recorded voice message, then repeat until a button is pressed.
@@ -494,35 +509,35 @@ function checkDue(){
 function showAlarm(d){
   alarmOpen=d; const m=d.med; const r=rxOf(m.rxId); const dr=r&&doctor(r.doctorId);
   const food=FOOD[m.food||""];
-  const L=document.createElement("div"); L.className="alarm"; L.setAttribute("role","alertdialog"); L.setAttribute("aria-label","موعد الدواء");
+  const L=document.createElement("div"); L.className="alarm"; L.setAttribute("role","alertdialog"); L.setAttribute("aria-label",""+T("موعد الدواء")+"");
   L.innerHTML=`<div class="box">
     <div class="ring">${pill(64,"#ffffff")}</div>
-    <div class="label" style="color:inherit;opacity:.85">حان موعد الدواء · ${fmtTime(d.time)}</div>
+    <div class="label" style="color:inherit;opacity:.85">${T("حان موعد الدواء")} · ${fmtTime(d.time)}</div>
     <h2>${esc(m.name)}</h2>
     ${m.dose?`<div class="dosebig">${esc(m.dose)}</div>`:""}
-    ${diseaseOf(m)?`<div class="alarm-dz">لعلاج ${esc(diseaseOf(m))}</div>`:""}
-    <div class="meta">${[food,dr?("د. "+esc(dr.name)):"",m.notes?esc(m.notes):""].filter(Boolean).join(" · ")}</div>
-    ${alarmQueue.length?`<div class="more">و${alarmQueue.length} ${alarmQueue.length>1?"أدوية أخرى":"دواء آخر"} في نفس الوقت</div>`:""}
+    ${diseaseOf(m)?`<div class="alarm-dz">${T("لعلاج")} ${esc(diseaseOf(m))}</div>`:""}
+    <div class="meta">${[food,dr?(""+T("د")+". "+esc(dr.name)):"",m.notes?esc(m.notes):""].filter(Boolean).join(" · ")}</div>
+    ${alarmQueue.length?`<div class="more">${T("و")}${alarmQueue.length} ${alarmQueue.length>1?""+T("أدوية أخرى")+"":""+T("دواء آخر")+""} ${T("في نفس الوقت")}</div>`:""}
     <div class="btns">
-      <button class="btn take" data-a="taken">${I.check} أخذت الدواء</button>
-      <button class="btn alt" data-a="snooze">ذكّرني بعد ${S.settings.snooze} دقائق</button>
-      <button class="btn alt" data-a="skipped">تخطّي هذه الجرعة</button>
+      <button class="btn take" data-a="taken">${I.check} ${T("أخذت الدواء")}</button>
+      <button class="btn alt" data-a="snooze">${T("ذكّرني بعد")} ${S.settings.snooze} ${T("دقائق")}</button>
+      <button class="btn alt" data-a="skipped">${T("تخطّي هذه الجرعة")}</button>
     </div></div>`;
   document.body.appendChild(L);
   L.querySelector("[data-a=taken]").focus();
   L.addEventListener("click",e=>{const b=e.target.closest("[data-a]");if(!b)return;
     const a=b.dataset.a; stopRinging(); L.remove(); alarmOpen=null;
-    if(a==="snooze"){ snoozed[d.key]=Date.now()+S.settings.snooze*60000; toast("سيتم التذكير بعد "+S.settings.snooze+" دقائق"); }
-    else { if(!d.key.startsWith("test|")){S.log[d.key]=a; save();} toast(a==="taken"?"تم تسجيل الجرعة ✓":"تم تخطي الجرعة"); }
+    if(a==="snooze"){ snoozed[d.key]=Date.now()+S.settings.snooze*60000; toast(""+T("سيتم التذكير بعد")+" "+S.settings.snooze+" "+T("دقائق")+""); }
+    else { if(!d.key.startsWith("test|")){S.log[d.key]=a; save();} toast(a==="taken"?""+T("تم تسجيل الجرعة")+" ✓":""+T("تم تخطي الجرعة")+""); }
     render(); setTimeout(checkDue,300);
   });
   startRinging(m);
-  systemNotify("💊 حان موعد "+m.name,(m.dose||"")+(food?" · "+food:""),d.key);
+  systemNotify("💊 "+T("حان موعد")+" "+m.name,(m.dose||"")+(food?" · "+food:""),d.key);
 }
 
 async function setWake(on){
   S.settings.wake=on; save();
-  if(on && "wakeLock" in navigator){ try{ wakeLock=await navigator.wakeLock.request("screen"); }catch(e){ toast("الجهاز لم يسمح بإبقاء الشاشة مضاءة"); } }
+  if(on && "wakeLock" in navigator){ try{ wakeLock=await navigator.wakeLock.request("screen"); }catch(e){ toast(""+T("الجهاز لم يسمح بإبقاء الشاشة مضاءة")+""); } }
   else if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
 }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ if(S.settings.wake) setWake(true); checkDue(); if(tab!=="more"&&!document.querySelector(".scrim")) render(); else renderTop(); }});
@@ -531,8 +546,8 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 let tab="today";
 try{ const h=location.hash.slice(1); if(["today","rx","doctors","reports","more"].includes(h)) tab=h; }catch(e){}
 function renderTabs(){
-  const T=[["today","اليوم",I.today],["rx","الوصفات",I.rx],["doctors","الأطباء",I.doc],["reports","التقارير",I.rep],["more","الإعدادات",I.set]];
-  $("#tabs").innerHTML=T.map(([k,l,ic])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${ic}<span>${l}</span></button>`).join("");
+  const TABS=[["today",""+T("اليوم")+"",I.today],["rx",""+T("الوصفات")+"",I.rx],["doctors",""+T("الأطباء")+"",I.doc],["reports",""+T("التقارير")+"",I.rep],["more",""+T("الإعدادات")+"",I.set]];
+  $("#tabs").innerHTML=TABS.map(([k,l,ic])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${ic}<span>${l}</span></button>`).join("");
 }
 $("#tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;try{history.replaceState(null,"","#"+tab);}catch(_){}render();window.scrollTo(0,0);});
 
@@ -541,14 +556,14 @@ function renderTop(){
   let next="";
   if(nd){
     let cd="";
-    if(!nd.offset){ const diff=nd.min-nowMin(); cd = diff<=0?"الآن":(diff<60?Math.ceil(diff)+" د":Math.floor(diff/60)+" س "+Math.round(diff%60)+" د"); }
-    else cd = nd.offset===1?"غداً":dayName(new Date(Date.now()+nd.offset*864e5));
+    if(!nd.offset){ const diff=nd.min-nowMin(); cd = diff<=0?""+T("الآن")+"":(diff<60?Math.ceil(diff)+" "+T("د@min")+"":Math.floor(diff/60)+" "+T("س")+" "+Math.round(diff%60)+" "+T("د@min")+""); }
+    else cd = nd.offset===1?""+T("غداً")+"":dayName(new Date(Date.now()+nd.offset*864e5));
     next=`<div class="next">${pill(30,"currentColor")}<div><b>${esc(nd.med.name)} · ${fmtTime(nd.time)}</b><span>${esc(nd.med.dose||"")}</span></div><div class="cd">${cd}</div></div>`;
   } else if(S.meds.length===0){
-    next=`<div class="next">${pill(30)}<div><b>لا توجد أدوية بعد</b><span>أضف طبيباً ثم وصفته وأدويتها</span></div></div>`;
-  } else next=`<div class="next">${pill(30)}<div><b>لا جرعات متبقية</b><span>أحسنت، أنهيت أدوية اليوم</span></div></div>`;
-  const warn = audioReady()?"":`<div class="sound-warn"><span>المس الزر لتفعيل صوت المنبّه</span><button id="unlock">تفعيل الصوت</button></div>`;
-  $("#top").innerHTML=`<div class="hello"><h1>${S.profile.name?"أهلاً، "+esc(S.profile.name):"أدويتي"}</h1><small>${fmtDate(d)}</small></div>${next}${warn}`;
+    next=`<div class="next">${pill(30)}<div><b>${T("لا توجد أدوية بعد")}</b><span>${T("أضف طبيباً ثم وصفته وأدويتها")}</span></div></div>`;
+  } else next=`<div class="next">${pill(30)}<div><b>${T("لا جرعات متبقية")}</b><span>${T("أحسنت، أنهيت أدوية اليوم")}</span></div></div>`;
+  const warn = audioReady()?"":`<div class="sound-warn"><span>${T("المس الزر لتفعيل صوت المنبّه")}</span><button id="unlock">${T("تفعيل الصوت")}</button></div>`;
+  $("#top").innerHTML=`<div class="hello"><h1>${S.profile.name?""+T("أهلاً،")+" "+esc(S.profile.name):""+T("أدويتي")+""}</h1><small>${fmtDate(d)}</small></div>${next}${warn}`;
   const u=$("#unlock"); if(u) u.onclick=()=>{unlockAudio(); setTimeout(()=>{chime();},150);};
 }
 
@@ -558,39 +573,39 @@ function render(){ renderTop(); renderTabs(); ({today:vToday,rx:vRx,doctors:vDoc
 function vToday(){
   const k=today(); const list=dosesFor(k);
   const done=list.filter(d=>d.status==="taken").length;
-  let h=(NATIVE&&!exactOK)?`<div class="card" style="display:grid;gap:8px;border-color:var(--amber);background:var(--amber-soft)"><b>خطوة واحدة ليرنّ المنبّه في موعده بالضبط</b><p class="hint">اضغط الزر ثم فعّل «السماح» أمام أدويتي، وارجع للتطبيق.</p><button class="btn" id="askExact">السماح بالمنبّهات</button></div>`:"";
-  h+=(IS_ANDROID&&!NATIVE&&!S.settings.hideApk)?`<div class="card apk-banner" style="display:grid;gap:8px">${apkBlock()}<button class="btn line sm" id="hideApk">لاحقاً</button></div>`:"";
-  h+=`<div class="sec-head"><h2>جرعات اليوم</h2><span class="chip teal">${done} من ${list.length}</span></div>`;
+  let h=(NATIVE&&!exactOK)?`<div class="card" style="display:grid;gap:8px;border-color:var(--amber);background:var(--amber-soft)"><b>${T("خطوة واحدة ليرنّ المنبّه في موعده بالضبط")}</b><p class="hint">${T("اضغط الزر ثم فعّل «السماح» أمام أدويتي، وارجع للتطبيق")}.</p><button class="btn" id="askExact">${T("السماح بالمنبّهات")}</button></div>`:"";
+  h+=(IS_ANDROID&&!NATIVE&&!S.settings.hideApk)?`<div class="card apk-banner" style="display:grid;gap:8px">${apkBlock()}<button class="btn line sm" id="hideApk">${T("لاحقاً")}</button></div>`:"";
+  h+=`<div class="sec-head"><h2>${T("جرعات اليوم")}</h2><span class="chip teal">${done} ${T("من")} ${list.length}</span></div>`;
   if(list.length){
     h+=`<div class="progress" aria-hidden="true"><i style="width:${list.length?done/list.length*100:0}%"></i></div>`;
     h+=list.map(d=>{const st=stateOf(d); const m=d.med; const food=FOOD[m.food||""];
-      const chip={taken:'<span class="chip ok">تم</span>',skipped:'<span class="chip mut">تخطّي</span>',missed:'<span class="chip bad">فاتت</span>',due:'<span class="chip amb">الآن</span>',upcoming:""}[st];
+      const chip={taken:'<span class="chip ok">'+T("تم")+'</span>',skipped:'<span class="chip mut">'+T("تخطّي")+'</span>',missed:'<span class="chip bad">'+T("فاتت")+'</span>',due:'<span class="chip amb">'+T("الآن")+'</span>',upcoming:""}[st];
       const acts = (st==="taken"||st==="skipped")
-        ? `<button class="btn sm ghost" data-undo="${esc(d.key)}">تراجع</button>`
-        : `<button class="btn sm ok" data-take="${esc(d.key)}" aria-label="أخذت ${esc(m.name)}">${I.check}</button>`;
-      return `<div class="dose ${st}"><div class="time">${fmtTime(d.time).replace(/ (ص|م)$/,"<small>$1</small>").replace(/<small>ص<\/small>/,"<small>صباحاً</small>").replace(/<small>م<\/small>/,"<small>مساءً</small>")}</div>
+        ? `<button class="btn sm ghost" data-undo="${esc(d.key)}">${T("تراجع")}</button>`
+        : `<button class="btn sm ok" data-take="${esc(d.key)}" aria-label="${T("أخذت")} ${esc(m.name)}">${I.check}</button>`;
+      return `<div class="dose ${st}"><div class="time">${tCell(d.time)}</div>
         <div class="info"><b>${esc(m.name)}${dz(m)} ${chip}</b><span>${esc(m.dose||"")}${food?" · "+food:""}</span></div><div class="acts">${acts}</div></div>`;}).join("");
   } else {
-    h+=`<div class="empty"><b>لا توجد جرعات مجدولة اليوم</b>سجّل وصفة من طبيبك، أو أضف دواءً بدون وصفة مثل فيتامين أو مسكّن.<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-go="${S.doctors.length?"rx":"doctors"}">${I.plus} ${S.doctors.length?"إضافة وصفة":"إضافة طبيب"}</button><button class="btn ghost" data-go="otc">${I.plus} دواء بدون وصفة</button></div></div>`;
+    h+=`<div class="empty"><b>${T("لا توجد جرعات مجدولة اليوم")}</b>${T("سجّل وصفة من طبيبك، أو أضف دواءً بدون وصفة مثل فيتامين أو مسكّن")}.<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-go="${S.doctors.length?"rx":"doctors"}">${I.plus} ${S.doctors.length?""+T("إضافة وصفة")+"":""+T("إضافة طبيب")+""}</button><button class="btn ghost" data-go="otc">${I.plus} ${T("دواء بدون وصفة")}</button></div></div>`;
   }
   // as-needed medicines (no fixed schedule)
   const prn=S.meds.filter(m=>m.prn&&!m.paused);
   if(prn.length){
-    h+=`<div class="sec-head" style="margin-top:6px"><h2>عند اللزوم</h2><span class="label">سجّل الجرعة عندما تأخذها</span></div>`;
+    h+=`<div class="sec-head" style="margin-top:6px"><h2>${T("عند اللزوم")}</h2><span class="label">${T("سجّل الجرعة عندما تأخذها")}</span></div>`;
     h+=prn.map(m=>{const s=prnStatus(m);
-      const last=s.last?`آخر جرعة ${fmtClock(s.last)}${s.lastDay!==today()?" ("+new Date(s.last).toLocaleDateString("ar-EG",{weekday:"long"})+")":""}`:"لم تُؤخذ بعد";
-      const warn=s.maxed?`<span class="chip bad">وصلت للحد اليومي</span>`:s.waitMin>0?`<span class="chip amb">الجرعة التالية بعد ${fmtDur(s.waitMin)}</span>`:"";
-      return `<div class="dose ${s.maxed||s.waitMin>0?"due":"upcoming"}"><div class="time">${s.count}<small>اليوم${m.maxDay?" من "+m.maxDay:""}</small></div>
+      const last=s.last?`${T("آخر جرعة")} ${fmtClock(s.last)}${s.lastDay!==today()?" ("+new Date(s.last).toLocaleDateString(LOC,{weekday:"long"})+")":""}`:""+T("لم تُؤخذ بعد")+"";
+      const warn=s.maxed?`<span class="chip bad">${T("وصلت للحد اليومي")}</span>`:s.waitMin>0?`<span class="chip amb">${T("الجرعة التالية بعد")} ${fmtDur(s.waitMin)}</span>`:"";
+      return `<div class="dose ${s.maxed||s.waitMin>0?"due":"upcoming"}"><div class="time">${s.count}<small>${T("اليوم")}${m.maxDay?" "+T("من")+" "+m.maxDay:""}</small></div>
         <div class="info"><b>${esc(m.name)}${dz(m)}</b><span>${esc(m.dose||"")}${FOOD[m.food||""]?" · "+FOOD[m.food||""]:""}</span><span>${last} ${warn}</span></div>
-        <div class="acts" style="flex-direction:column">${s.last&&Date.now()-s.last<6*3600000?`<button class="btn sm ghost" data-prnundo="${s.last}" aria-label="حذف آخر جرعة مسجلة">تراجع</button>`:""}<button class="btn sm ok" data-prn="${m.id}">${I.check} أخذت</button></div></div>`;}).join("");
+        <div class="acts" style="flex-direction:column">${s.last&&Date.now()-s.last<6*3600000?`<button class="btn sm ghost" data-prnundo="${s.last}" aria-label="${T("حذف آخر جرعة مسجلة")}">${T("تراجع")}</button>`:""}<button class="btn sm ok" data-prn="${m.id}">${I.check} ${T("أخذت")}</button></div></div>`;}).join("");
     h+=`<div id="prnConfirm"></div>`;
   }
   // last 7 days adherence
   if(S.meds.length){
-    let w=`<div class="card" style="display:grid;gap:10px"><div class="label">الالتزام خلال آخر 7 أيام</div><div class="week">`;
+    let w=`<div class="card" style="display:grid;gap:10px"><div class="label">${T("الالتزام خلال آخر 7 أيام")}</div><div class="week">`;
     for(let i=6;i>=0;i--){const kk=addDays(k,-i);const ds=dosesFor(kk);const t=ds.filter(x=>S.log[x.key]==="taken").length;
       const dt=new Date(Date.now()-i*864e5); let cls=""; if(ds.length&&i>0){cls=t===ds.length?"full":t?"part":"none";} else if(ds.length&&i===0&&t===ds.length)cls="full";
-      w+=`<div><i class="${cls}">${dt.getDate()}</i>${i===0?"اليوم":dayName(dt).replace("ال","").slice(0,5)}</div>`;}
+      w+=`<div><i class="${cls}">${dt.getDate()}</i>${i===0?""+T("اليوم")+"":(LANG==="en"?dayName(dt).slice(0,3):dayName(dt).replace("ال","").slice(0,5))}</div>`;}
     h+=w+`</div></div>`;
   }
   h+=GIFT;
@@ -600,20 +615,20 @@ function vToday(){
 }
 // The author's dedication, shown on the welcome screen, under Today and in Settings.
 const GIFT=`<div class="gift"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 5 6.4 5c2.1 0 3.6 1.2 4.6 2.6.9-1.4 2.5-2.6 4.6-2.6 3.4 0 5.5 3.4 4 6.8C19.5 16.4 12 21 12 21z" fill="currentColor"/></svg>
-  <p>التطبيق هدية لمرضى البشرية<br>تمنياتي لكم بالشفاء</p><span>م/ محسن يوسف</span></div>`;
+  <p>${T("التطبيق هدية لمرضى البشرية")}<br>${T("تمنياتي لكم بالشفاء")}</p><span>${T("م/ محسن يوسف")}</span></div>`;
 $("#view").addEventListener("click",e=>{
-  const t=e.target.closest("[data-take]"); if(t){S.log[t.dataset.take]="taken";save();toast("تم تسجيل الجرعة ✓");render();return;}
+  const t=e.target.closest("[data-take]"); if(t){S.log[t.dataset.take]="taken";save();toast(""+T("تم تسجيل الجرعة")+" ✓");render();return;}
   const u=e.target.closest("[data-undo]"); if(u){delete S.log[u.dataset.undo];delete fired[u.dataset.undo];save();render();return;}
   const g=e.target.closest("[data-go]"); if(g){const go=g.dataset.go; if(go==="otc"){tab="rx";render();medSheet(null,"");return;} tab=go;render(); if(tab==="doctors")docSheet(); else rxSheet(); return;}
   const p=e.target.closest("[data-prn]"); if(p){logPrn(p.dataset.prn,false);return;}
   const pf=e.target.closest("[data-prnforce]"); if(pf){logPrn(pf.dataset.prnforce,true);return;}
   if(e.target.closest("[data-prncancel]")){$("#prnConfirm").innerHTML="";return;}
-  const pu=e.target.closest("[data-prnundo]"); if(pu){S.prn=S.prn.filter(x=>x.ts!==Number(pu.dataset.prnundo));save();render();toast("تم حذف آخر جرعة");return;}
+  const pu=e.target.closest("[data-prnundo]"); if(pu){S.prn=S.prn.filter(x=>x.ts!==Number(pu.dataset.prnundo));save();render();toast(""+T("تم حذف آخر جرعة")+"");return;}
 });
 
 /* ---------- as-needed (PRN) helpers ---------- */
 const fmtClock=ts=>{const d=new Date(ts);return fmtTime(pad(d.getHours())+":"+pad(d.getMinutes()));};
-const fmtDur=min=>{min=Math.ceil(min);return min<60?min+" دقيقة":Math.floor(min/60)+" س"+(min%60?" و"+(min%60)+" د":"");};
+const fmtDur=min=>{min=Math.ceil(min);return min<60?min+" "+T("دقيقة")+"":Math.floor(min/60)+" "+T("س")+""+(min%60?" "+T("و")+""+(min%60)+" "+T("د")+"":"");};
 function prnStatus(m){
   const mine=S.prn.filter(x=>x.medId===m.id).sort((a,b)=>b.ts-a.ts);
   const k=today(); const count=mine.filter(x=>dkey(new Date(x.ts))===k).length;
@@ -625,12 +640,12 @@ function logPrn(id,force){
   const m=S.meds.find(x=>x.id===id); if(!m)return; const s=prnStatus(m);
   if(!force&&(s.maxed||s.waitMin>0)){
     const box=$("#prnConfirm"); if(!box)return;
-    box.innerHTML=`<div class="card" style="display:grid;gap:8px;border-color:var(--amber)"><b>تنبيه: ${esc(m.name)}</b><span class="hint">${s.maxed?"أخذت الحد الأقصى المسموح اليوم ("+m.maxDay+" جرعات).":"لم تمر المدة المحددة بين الجرعات. الجرعة التالية بعد "+fmtDur(s.waitMin)+"."} راجع الطبيب أو الصيدلي قبل زيادة الجرعة.</span>
-      <div class="row"><button class="btn ghost sm" data-prnforce="${m.id}">تسجيل الجرعة على أي حال</button><button class="btn line sm" data-prncancel>إلغاء</button></div></div>`;
+    box.innerHTML=`<div class="card" style="display:grid;gap:8px;border-color:var(--amber)"><b>${T("تنبيه")}: ${esc(m.name)}</b><span class="hint">${s.maxed?""+T("أخذت الحد الأقصى المسموح اليوم")+" ("+m.maxDay+" "+T("جرعات)")+".":""+T("لم تمر المدة المحددة بين الجرعات. الجرعة التالية بعد")+" "+fmtDur(s.waitMin)+"."} ${T("راجع الطبيب أو الصيدلي قبل زيادة الجرعة")}.</span>
+      <div class="row"><button class="btn ghost sm" data-prnforce="${m.id}">${T("تسجيل الجرعة على أي حال")}</button><button class="btn line sm" data-prncancel>${T("إلغاء")}</button></div></div>`;
     box.scrollIntoView({behavior:"smooth",block:"center"}); return;
   }
   const ts=Date.now(); S.prn.push({medId:id,ts}); save(); render();
-  toast("تم تسجيل "+m.name+" الساعة "+fmtClock(ts));
+  toast(""+T("تم تسجيل")+" "+m.name+" "+T("الساعة")+" "+fmtClock(ts));
 }
 
 /* ---------- view: prescriptions ---------- */
@@ -638,24 +653,24 @@ function logPrn(id,force){
 function diseaseOf(m){ if(m.disease) return m.disease; const r=m.rxId&&rxOf(m.rxId); return r&&r.title?r.title:""; }
 const dz=m=>{const t=diseaseOf(m); return t?` <small class="dz">${esc(t)}</small>`:"";};
 function medRow(m){const food=FOOD[m.food||""]; const end=m.days?addDays(m.start,Number(m.days)-1):null; const ended=end&&end<today();
-  const when=m.prn?`عند اللزوم${m.gapH?" · كل "+m.gapH+" ساعات على الأقل":""}${m.maxDay?" · حد أقصى "+m.maxDay+" في اليوم":""}`:(m.days?"لمدة "+m.days+" يوم":"مستمر");
-  return `<div class="med">${pill(26,m.prn?"var(--amber)":"var(--teal)")}<div><b>${esc(m.name)}</b>${dz(m)} ${m.paused?'<span class="chip mut">متوقف</span>':ended?'<span class="chip mut">انتهى</span>':""}
+  const when=m.prn?`${T("عند اللزوم")}${m.gapH?" · "+T("كل")+" "+m.gapH+" "+T("ساعات على الأقل")+"":""}${m.maxDay?" · "+T("حد أقصى")+" "+m.maxDay+" "+T("في اليوم")+"":""}`:(m.days?""+T("لمدة")+" "+m.days+" "+T("يوم")+"":""+T("مستمر")+"");
+  return `<div class="med">${pill(26,m.prn?"var(--amber)":"var(--teal)")}<div><b>${esc(m.name)}</b>${dz(m)} ${m.paused?'<span class="chip mut">'+T("متوقف")+'</span>':ended?'<span class="chip mut">'+T("انتهى")+'</span>':""}
   <div class="sub">${esc(m.dose||"")}${food?" · "+food:""} · ${when}</div>
   ${m.prn?"":`<div class="times">${(m.times||[]).map(t=>`<span class="chip teal">${fmtTime(t)}</span>`).join("")}</div>`}</div>
-  <button class="icon-btn" data-editmed="${m.id}" aria-label="تعديل ${esc(m.name)}">${I.edit}</button></div>`;}
+  <button class="icon-btn" data-editmed="${m.id}" aria-label="${T("تعديل")} ${esc(m.name)}">${I.edit}</button></div>`;}
 function vRx(){
   const otc=S.meds.filter(m=>!m.rxId||!rxOf(m.rxId));
-  let h=`<div class="sec-head"><h2>أدوية بدون وصفة</h2><button class="btn sm ghost" id="addOtc">${I.plus} إضافة</button></div>`;
-  h+= otc.length?`<div class="card rx"><p class="hint">فيتامينات ومكملات ومسكّنات تأخذها من نفسك، بمواعيد ثابتة أو عند اللزوم.</p>${[...otc].reverse().map(medRow).join("")}</div>`
-    :`<div class="empty"><b>لا توجد أدوية بدون وصفة</b>أضف فيتاميناً يومياً بمواعيد ثابتة، أو مسكّناً تأخذه عند اللزوم فقط.</div>`;
-  h+=`<div class="sec-head" style="margin-top:8px"><h2>الوصفات الطبية</h2><button class="btn sm" id="addRx">${I.plus} وصفة جديدة</button></div>`;
-  if(!S.rx.length) h+=`<div class="empty"><b>لا توجد وصفات</b>سجّل كل وصفة باسم الطبيب الذي كتبها، ثم أضف إليها الأدوية ومواعيدها.</div>`;
+  let h=`<div class="sec-head"><h2>${T("أدوية بدون وصفة")}</h2><button class="btn sm ghost" id="addOtc">${I.plus} ${T("إضافة")}</button></div>`;
+  h+= otc.length?`<div class="card rx"><p class="hint">${T("فيتامينات ومكملات ومسكّنات تأخذها من نفسك، بمواعيد ثابتة أو عند اللزوم")}.</p>${[...otc].reverse().map(medRow).join("")}</div>`
+    :`<div class="empty"><b>${T("لا توجد أدوية بدون وصفة")}</b>${T("أضف فيتاميناً يومياً بمواعيد ثابتة، أو مسكّناً تأخذه عند اللزوم فقط")}.</div>`;
+  h+=`<div class="sec-head" style="margin-top:8px"><h2>${T("الوصفات الطبية")}</h2><button class="btn sm" id="addRx">${I.plus} ${T("وصفة جديدة")}</button></div>`;
+  if(!S.rx.length) h+=`<div class="empty"><b>${T("لا توجد وصفات")}</b>${T("سجّل كل وصفة باسم الطبيب الذي كتبها، ثم أضف إليها الأدوية ومواعيدها")}.</div>`;
   S.rx.map((r,i)=>({r,i})).sort((a,b)=>(b.r.date||"").localeCompare(a.r.date||"")||b.i-a.i).map(x=>x.r).forEach(r=>{
     const dr=doctor(r.doctorId); const meds=S.meds.filter(m=>m.rxId===r.id);
-    h+=`<div class="card rx"><div class="rx-head"><div><h3>${dr?"د. "+esc(dr.name):"طبيب غير محدد"}</h3><p>${dr?esc(dr.specialty||""):""}${r.date?" · "+new Date(r.date).toLocaleDateString("ar-EG",{day:"numeric",month:"long",year:"numeric"}):""}${r.title?" · "+esc(r.title):""}</p></div>
-      <button class="icon-btn" data-editrx="${r.id}" aria-label="تعديل الوصفة">${I.edit}</button></div>`;
+    h+=`<div class="card rx"><div class="rx-head"><div><h3>${dr?""+T("د")+". "+esc(dr.name):""+T("طبيب غير محدد")+""}</h3><p>${dr?esc(dr.specialty||""):""}${r.date?" · "+new Date(r.date).toLocaleDateString(LOC,{day:"numeric",month:"long",year:"numeric"}):""}${r.title?" · "+esc(r.title):""}</p></div>
+      <button class="icon-btn" data-editrx="${r.id}" aria-label="${T("تعديل الوصفة")}">${I.edit}</button></div>`;
     h+=[...meds].reverse().map(medRow).join("");
-    h+=`<button class="btn line sm" data-addmed="${r.id}">${I.plus} إضافة دواء لهذه الوصفة</button></div>`;
+    h+=`<button class="btn line sm" data-addmed="${r.id}">${I.plus} ${T("إضافة دواء لهذه الوصفة")}</button></div>`;
   });
   $("#view").innerHTML=h;
   $("#addRx").onclick=()=>rxSheet();
@@ -667,15 +682,15 @@ function vRx(){
 
 /* ---------- view: doctors ---------- */
 function vDoctors(){
-  let h=`<div class="sec-head"><h2>أطبائي</h2><button class="btn sm" id="addDoc">${I.plus} طبيب جديد</button></div>`;
-  if(!S.doctors.length) h+=`<div class="empty"><b>لم تضف أطباء بعد</b>أضف اسم الطبيب وتخصصه ورقم العيادة لتربط به وصفاته.</div>`;
+  let h=`<div class="sec-head"><h2>${T("أطبائي")}</h2><button class="btn sm" id="addDoc">${I.plus} ${T("طبيب جديد")}</button></div>`;
+  if(!S.doctors.length) h+=`<div class="empty"><b>${T("لم تضف أطباء بعد")}</b>${T("أضف اسم الطبيب وتخصصه ورقم العيادة لتربط به وصفاته")}.</div>`;
   // Newest first: the doctor with the most recent prescription (or most recently added) on top.
   const lastRx=d=>S.rx.filter(r=>r.doctorId===d.id).reduce((a,r)=>(r.date||"")>a?(r.date||""):a,"");
   [...S.doctors].map((d,i)=>({d,i,k:lastRx(d)})).sort((a,b)=>b.k.localeCompare(a.k)||b.i-a.i).map(x=>x.d).forEach(d=>{const n=S.rx.filter(r=>r.doctorId===d.id).length;
-    h+=`<div class="card doc"><div class="avatar">${esc((d.name||"؟").trim().charAt(0))}</div>
-      <div><b>د. ${esc(d.name)}</b><div class="sub">${esc(d.specialty||"")}${d.phone?' · <span dir="ltr">'+esc(d.phone)+"</span>":""}</div>
-      <div class="sub">${d.clinic?esc(d.clinic)+" · ":""}${n} ${n===1?"وصفة":"وصفات"}</div></div>
-      <button class="icon-btn" data-editdoc="${d.id}" aria-label="تعديل">${I.edit}</button></div>`;});
+    h+=`<div class="card doc"><div class="avatar">${esc((d.name||""+T("؟")+"").trim().charAt(0))}</div>
+      <div><b>${T("د")}. ${esc(d.name)}</b><div class="sub">${esc(d.specialty||"")}${d.phone?' · <span dir="ltr">'+esc(d.phone)+"</span>":""}</div>
+      <div class="sub">${d.clinic?esc(d.clinic)+" · ":""}${n} ${n===1?""+T("وصفة")+"":""+T("وصفات")+""}</div></div>
+      <button class="icon-btn" data-editdoc="${d.id}" aria-label="${T("تعديل")}">${I.edit}</button></div>`;});
   $("#view").innerHTML=h;
   $("#addDoc").onclick=()=>docSheet();
   $("#view").querySelectorAll("[data-editdoc]").forEach(b=>b.onclick=()=>docSheet(doctor(b.dataset.editdoc)));
@@ -683,7 +698,7 @@ function vDoctors(){
 
 /* ---------- view: monthly reports (newest month first) ---------- */
 const monthKey=k=>k.slice(0,7);
-const monthName=mk=>{const[y,m]=mk.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("ar-EG",{month:"long",year:"numeric"});};
+const monthName=mk=>{const[y,m]=mk.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString(LOC,{month:"long",year:"numeric"});};
 function monthsWithData(){
   const set=new Set([monthKey(today())]);
   S.rx.forEach(r=>r.date&&set.add(monthKey(r.date)));
@@ -706,37 +721,37 @@ function monthStats(mk){
 let openMonth=null;
 function vReports(){
   const months=monthsWithData(); if(openMonth===null||(openMonth&&!months.includes(openMonth))) openMonth=months[0];
-  let h=`<div class="sec-head"><h2>التقارير الشهرية</h2><span class="label">الأحدث أولاً</span></div>`;
-  if(!S.doctors.length&&!S.meds.length){ $("#view").innerHTML=h+`<div class="empty"><b>لا توجد بيانات بعد</b>عندما تضيف أطباءك ووصفاتهم وتسجّل جرعاتك، يظهر هنا ملخص لكل شهر.</div>`; return; }
+  let h=`<div class="sec-head"><h2>${T("التقارير الشهرية")}</h2><span class="label">${T("الأحدث أولاً")}</span></div>`;
+  if(!S.doctors.length&&!S.meds.length){ $("#view").innerHTML=h+`<div class="empty"><b>${T("لا توجد بيانات بعد")}</b>${T("عندما تضيف أطباءك ووصفاتهم وتسجّل جرعاتك، يظهر هنا ملخص لكل شهر")}.</div>`; return; }
   months.forEach(mk=>{
     const s=monthStats(mk); const open=mk===openMonth; const cur=mk===monthKey(today());
     const pctCls=s.pct===null?"mut":s.pct>=90?"ok":s.pct>=60?"amb":"bad";
     h+=`<div class="card rep ${open?"open":""}">
       <button class="rep-head" data-month="${mk}" aria-expanded="${open}">
-        <div><h3>${monthName(mk)}</h3><span class="sub">${s.rx.length} ${s.rx.length===1?"وصفة":"وصفات"} · ${s.docIds.length} ${s.docIds.length===1?"طبيب":"أطباء"}${cur?" · الشهر الحالي":""}</span></div>
-        <span class="chip ${pctCls}">${s.pct===null?"لا جرعات":"التزام "+s.pct+"%"}</span></button>`;
+        <div><h3>${monthName(mk)}</h3><span class="sub">${s.rx.length} ${s.rx.length===1?""+T("وصفة")+"":""+T("وصفات")+""} · ${s.docIds.length} ${s.docIds.length===1?""+T("طبيب")+"":""+T("أطباء")+""}${cur?" · "+T("الشهر الحالي")+"":""}</span></div>
+        <span class="chip ${pctCls}">${s.pct===null?""+T("لا جرعات")+"":""+T("التزام")+" "+s.pct+"%"}</span></button>`;
     if(open){
       h+=`<div class="rep-stats">
-        <div><b>${s.taken}</b><span>جرعة أُخذت</span></div>
-        <div><b>${s.missed}</b><span>فاتت</span></div>
-        <div><b>${s.skipped}</b><span>تخطّي</span></div>
-        <div><b>${s.prnCount}</b><span>عند اللزوم</span></div></div>`;
-      if(s.planned) h+=`<div class="progress" aria-label="نسبة الالتزام ${s.pct}%"><i style="width:${s.pct}%"></i></div>`;
-      h+=`<div class="rep-sec"><div class="label">الوصفات خلال الشهر</div>`;
+        <div><b>${s.taken}</b><span>${T("جرعة أُخذت")}</span></div>
+        <div><b>${s.missed}</b><span>${T("فاتت")}</span></div>
+        <div><b>${s.skipped}</b><span>${T("تخطّي")}</span></div>
+        <div><b>${s.prnCount}</b><span>${T("عند اللزوم")}</span></div></div>`;
+      if(s.planned) h+=`<div class="progress" aria-label="${T("نسبة الالتزام")} ${s.pct}%"><i style="width:${s.pct}%"></i></div>`;
+      h+=`<div class="rep-sec"><div class="label">${T("الوصفات خلال الشهر")}</div>`;
       h+= s.rx.length ? s.rx.map(r=>{const dr=doctor(r.doctorId); const meds=S.meds.filter(m=>m.rxId===r.id);
-          return `<div class="rep-row"><div class="rep-date">${new Date(r.date).toLocaleDateString("ar-EG",{day:"numeric",month:"short"})}</div>
-            <div class="rep-body"><b>${dr?"د. "+esc(dr.name):"طبيب غير محدد"}</b><span class="sub">${dr&&dr.specialty?esc(dr.specialty):""}${r.title?(dr&&dr.specialty?" · ":"")+esc(r.title):""}</span>
+          return `<div class="rep-row"><div class="rep-date">${new Date(r.date).toLocaleDateString(LOC,{day:"numeric",month:"short"})}</div>
+            <div class="rep-body"><b>${dr?""+T("د")+". "+esc(dr.name):""+T("طبيب غير محدد")+""}</b><span class="sub">${dr&&dr.specialty?esc(dr.specialty):""}${r.title?(dr&&dr.specialty?" · ":"")+esc(r.title):""}</span>
             ${meds.length?`<div class="times">${meds.map(m=>`<span class="chip teal">${esc(m.name)}</span>`).join("")}</div>`:""}</div></div>`;}).join("")
-        : `<p class="hint">لا توجد وصفات جديدة في هذا الشهر.</p>`;
+        : `<p class="hint">${T("لا توجد وصفات جديدة في هذا الشهر")}.</p>`;
       h+=`</div>`;
       if(s.docIds.length){
-        h+=`<div class="rep-sec"><div class="label">الأطباء الذين زرتهم</div>`+s.docIds.map(id=>{const d=doctor(id); const n=s.rx.filter(r=>r.doctorId===id).length;
-          return d?`<div class="rep-doc"><div class="avatar">${esc(d.name.trim().charAt(0))}</div><div><b>د. ${esc(d.name)}</b><span class="sub">${esc(d.specialty||"")}</span></div><span class="chip mut">${n} ${n===1?"وصفة":"وصفات"}</span></div>`:"";}).join("")+`</div>`;
+        h+=`<div class="rep-sec"><div class="label">${T("الأطباء الذين زرتهم")}</div>`+s.docIds.map(id=>{const d=doctor(id); const n=s.rx.filter(r=>r.doctorId===id).length;
+          return d?`<div class="rep-doc"><div class="avatar">${esc(d.name.trim().charAt(0))}</div><div><b>${T("د")}. ${esc(d.name)}</b><span class="sub">${esc(d.specialty||"")}</span></div><span class="chip mut">${n} ${n===1?""+T("وصفة")+"":""+T("وصفات")+""}</span></div>`:"";}).join("")+`</div>`;
       }
       const prnIds=Object.keys(s.prnBy);
       if(prnIds.length){
-        h+=`<div class="rep-sec"><div class="label">أدوية عند اللزوم</div>`+prnIds.sort((a,b)=>s.prnBy[b]-s.prnBy[a]).map(id=>{const m=S.meds.find(x=>x.id===id);
-          return `<div class="rep-doc"><div>${pill(26,"var(--amber)")}</div><div><b>${m?esc(m.name):"دواء محذوف"}</b><span class="sub">${m?esc(m.dose||""):""}</span></div><span class="chip amb">${s.prnBy[id]} مرة</span></div>`;}).join("")+`</div>`;
+        h+=`<div class="rep-sec"><div class="label">${T("أدوية عند اللزوم")}</div>`+prnIds.sort((a,b)=>s.prnBy[b]-s.prnBy[a]).map(id=>{const m=S.meds.find(x=>x.id===id);
+          return `<div class="rep-doc"><div>${pill(26,"var(--amber)")}</div><div><b>${m?esc(m.name):""+T("دواء محذوف")+""}</b><span class="sub">${m?esc(m.dose||""):""}</span></div><span class="chip amb">${s.prnBy[id]} ${T("مرة")}</span></div>`;}).join("")+`</div>`;
       }
     }
     h+=`</div>`;
@@ -748,35 +763,36 @@ function vReports(){
 /* ---------- view: settings ---------- */
 function vMore(){
   const perm = notifySupported()?Notification.permission:"unsupported";
-  const permTxt={granted:"مفعّلة",denied:"مرفوضة من المتصفح",default:"غير مفعّلة",unsupported:"غير مدعومة هنا"}[perm];
+  const permTxt={granted:""+T("مفعّلة")+"",denied:""+T("مرفوضة من المتصفح")+"",default:""+T("غير مفعّلة")+"",unsupported:""+T("غير مدعومة هنا")+""}[perm];
   $("#view").innerHTML=`
-  <div class="sec-head"><h2>الإعدادات</h2></div>
-  <div class="card"><div class="field"><label for="pname">اسم صاحب التطبيق</label><input id="pname" value="${esc(S.profile.name)}" placeholder="اكتب اسمك"></div></div>
+  <div class="sec-head"><h2>${T("الإعدادات")}</h2></div>
+  <div class="card set-item" style="flex-wrap:wrap"><div><b>Language / اللغة</b></div>${langSwitch()}</div>
+  <div class="card"><div class="field"><label for="pname">${T("اسم صاحب التطبيق")}</label><input id="pname" value="${esc(S.profile.name)}" placeholder="${T("اكتب اسمك")}"></div></div>
   <div class="card set-list">
-    <div class="set-item"><div><b>تجربة المنبّه</b><small>اسمع صوت التنبيه والنطق الآن</small></div><button class="btn sm" id="testAlarm">تجربة</button></div>
-    <div class="set-item"><div><b>رسالة صوتية مع المنبّه</b><small>«حان موعد الدواء…» بصوت مسجّل. اسم الدواء يظهر بخط كبير على الشاشة</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="رسالة صوتية مع المنبّه"></div>
-    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 180px"><b>نغمة المنبّه</b><small>اختر نغمة واسمعها</small></div>
-      <div class="row"><select id="tone" class="btn ghost sm" aria-label="نغمة المنبّه">${Object.entries(TONES).map(([k,t])=>`<option value="${k}" ${S.settings.tone===k?"selected":""}>${t.name}</option>`).join("")}</select><button class="btn sm ghost" id="playTone" aria-label="تشغيل النغمة">▶</button></div></div>
-    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 160px"><b>نوع الصوت</b><small>صوت الرسالة المسجّلة مع المنبّه</small></div>
-      <div class="presets seg" id="gender"><button type="button" data-g="female" aria-pressed="${!wantMale()}">نسائي</button><button type="button" data-g="male" aria-pressed="${wantMale()}">رجالي</button></div></div>
-    <div class="set-item"><div><b>تجربة الرسالة الصوتية</b><small>اسمع الرسالة بالصوت المختار</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
-    <div class="set-item"><div><b>مستوى الصوت</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="مستوى الصوت"></div>
-    <div class="set-item"><div><b>مدة الغفوة</b></div><select id="snz" class="btn ghost sm" aria-label="مدة الغفوة">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} دقائق</option>`).join("")}</select></div>
-    ${NATIVE?"":`<div class="set-item"><div><b>إشعارات الهاتف</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">تفعيل</button>':""}</div>`}
-    <div class="set-item"><div><b>إبقاء الشاشة مضاءة</b><small>يضمن رنين المنبّه أثناء فتح التطبيق</small></div><input type="checkbox" class="switch" id="wk" ${S.settings.wake?"checked":""} aria-label="إبقاء الشاشة مضاءة"></div>
+    <div class="set-item"><div><b>${T("تجربة المنبّه")}</b><small>${T("اسمع صوت التنبيه والنطق الآن")}</small></div><button class="btn sm" id="testAlarm">${T("تجربة")}</button></div>
+    <div class="set-item"><div><b>${T("رسالة صوتية مع المنبّه")}</b><small>«${T("حان موعد الدواء…» بصوت مسجّل. اسم الدواء يظهر بخط كبير على الشاشة")}</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="${T("رسالة صوتية مع المنبّه")}"></div>
+    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 180px"><b>${T("نغمة المنبّه")}</b><small>${T("اختر نغمة واسمعها")}</small></div>
+      <div class="row"><select id="tone" class="btn ghost sm" aria-label="${T("نغمة المنبّه")}">${Object.entries(TONES).map(([k,t])=>`<option value="${k}" ${S.settings.tone===k?"selected":""}>${t.name}</option>`).join("")}</select><button class="btn sm ghost" id="playTone" aria-label="${T("تشغيل النغمة")}">▶</button></div></div>
+    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 160px"><b>${T("نوع الصوت")}</b><small>${T("صوت الرسالة المسجّلة مع المنبّه")}</small></div>
+      <div class="presets seg" id="gender"><button type="button" data-g="female" aria-pressed="${!wantMale()}">${T("نسائي")}</button><button type="button" data-g="male" aria-pressed="${wantMale()}">${T("رجالي")}</button></div></div>
+    <div class="set-item"><div><b>${T("تجربة الرسالة الصوتية")}</b><small>${T("اسمع الرسالة بالصوت المختار")}</small></div><button class="btn sm ghost" id="testSpeak">${T("اسمع")}</button></div>
+    <div class="set-item"><div><b>${T("مستوى الصوت")}</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="${T("مستوى الصوت")}"></div>
+    <div class="set-item"><div><b>${T("مدة الغفوة")}</b></div><select id="snz" class="btn ghost sm" aria-label="${T("مدة الغفوة")}">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} ${T("دقائق")}</option>`).join("")}</select></div>
+    ${NATIVE?"":`<div class="set-item"><div><b>${T("إشعارات الهاتف")}</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">'+T("تفعيل")+'</button>':""}</div>`}
+    <div class="set-item"><div><b>${T("إبقاء الشاشة مضاءة")}</b><small>${T("يضمن رنين المنبّه أثناء فتح التطبيق")}</small></div><input type="checkbox" class="switch" id="wk" ${S.settings.wake?"checked":""} aria-label="${T("إبقاء الشاشة مضاءة")}"></div>
   </div>
   ${closedAlarmCard()}
   <div class="card" style="display:grid;gap:10px">
-    <b>حذف كل البيانات</b><p class="hint">يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف.</p>
-    <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">حذف كل البيانات</button></div>
+    <b>${T("حذف كل البيانات")}</b><p class="hint">${T("يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف")}.</p>
+    <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">${T("حذف كل البيانات")}</button></div>
   </div>
   <div class="card set-list">
-    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>تقارير شهرية للأطباء والوصفات، والأحدث يظهر أولاً</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
+    <div class="set-item"><div><b>${T("إصدار التطبيق")} ${APP_VERSION}</b><small>${T("تقارير شهرية للأطباء والوصفات، والأحدث يظهر أولاً")}</small></div><button class="btn sm ghost" id="forceUpd">${T("تحديث الآن")}</button></div>
   </div>
   ${GIFT}
-  <p class="hint" style="text-align:center">مجاني للجميع · يعمل بدون إنترنت · لا يرسل أي بيانات لأي خادم<br><a href="https://adwiyati.github.io/privacy.html" style="color:var(--teal)">سياسة الخصوصية</a></p>`;
+  <p class="hint" style="text-align:center">${T("مجاني للجميع")} · ${T("يعمل بدون إنترنت")} · ${T("لا يرسل أي بيانات لأي خادم")}<br><a href="https://adwiyati.github.io/privacy.html" style="color:var(--teal)">${T("سياسة الخصوصية")}</a></p>`;
   $("#forceUpd").onclick=forceUpdate;
-  $("#pname").onchange=e=>{S.profile.name=e.target.value.trim();save();renderTop();toast("تم حفظ الاسم");};
+  $("#pname").onchange=e=>{S.profile.name=e.target.value.trim();save();renderTop();toast(""+T("تم حفظ الاسم")+"");};
   $("#sp").onchange=e=>{S.settings.speech=e.target.checked;save();};
   $("#vol").onchange=e=>{S.settings.volume=Number(e.target.value);save();unlockAudio();chime();};
   $("#snz").onchange=e=>{S.settings.snooze=Number(e.target.value);save();};
@@ -787,69 +803,69 @@ function vMore(){
     $("#gender").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); $("#testSpeak").click(); };
   $("#testSpeak").onclick=()=>{ unlockAudio(); stopRinging();
     const was=S.settings.speech; S.settings.speech=true;
-    const m=S.meds.find(x=>!x.prn)||{name:"فيتامين د",dose:"كبسولة واحدة",food:"after"};
+    const m=S.meds.find(x=>!x.prn)||{name:""+T("فيتامين د")+"",dose:""+T("كبسولة واحدة")+"",food:"after"};
     playReminder(m); S.settings.speech=was; };
-  $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:"دواء تجريبي",dose:"قرص واحد",food:"after",id:"demo"};
+  $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:""+T("دواء تجريبي")+"",dose:""+T("قرص واحد")+"",food:"after",id:"demo"};
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
   const a=$("#askN"); if(a) a.onclick=async()=>{try{await Notification.requestPermission();}catch(e){} vMore();};
   const ics=$("#ics"); if(ics) ics.onclick=exportICS;
   const nt=$("#nativeTest"); if(nt) nt.onclick=nativeTest;
   const ae2=$("#askExact2"); if(ae2) ae2.onclick=askExact;
-  $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">متأكد؟ لا يمكن التراجع.</span><button class="btn danger sm" id="wipe2">نعم، احذف</button><button class="btn ghost sm" id="wipeNo">إلغاء</button>`;
-    $("#wipe2").onclick=()=>{S=blank();save();toast("تم حذف البيانات");render();welcome();};
+  $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">${T("متأكد؟ لا يمكن التراجع")}.</span><button class="btn danger sm" id="wipe2">${T("نعم، احذف")}</button><button class="btn ghost sm" id="wipeNo">${T("إلغاء")}</button>`;
+    $("#wipe2").onclick=()=>{S=blank();save();toast(""+T("تم حذف البيانات")+"");render();welcome();};
     $("#wipeNo").onclick=vMore;};
 }
 // Fetch the newest app files now. Only cached app files are removed; the user's data is untouched.
 async function forceUpdate(){
-  if(!navigator.onLine){ toast("اتصل بالإنترنت أولاً ثم اضغط تحديث"); return; }
-  toast("جاري التحديث…");
+  if(!navigator.onLine){ toast(""+T("اتصل بالإنترنت أولاً ثم اضغط تحديث")+""); return; }
+  toast(""+T("جاري التحديث")+"…");
   try{ const regs=await navigator.serviceWorker?.getRegistrations?.()||[]; await Promise.all(regs.map(r=>r.unregister())); }catch(e){}
   try{ const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); }catch(e){}
   setTimeout(()=>location.reload(),400);
 }
 function voiceInfo(){
-  if(!HAS_TTS) return "هذا المتصفح لا يدعم النطق. جرّب Chrome على أندرويد أو Safari على آيفون.";
+  if(!HAS_TTS) return ""+T("هذا المتصفح لا يدعم النطق. جرّب")+" Chrome "+T("على أندرويد أو")+" Safari "+T("على آيفون")+".";
   const v=arabicVoice();
-  if(v) return "الصوت المستخدم: "+v.name+(isFemale(v)?" (نسائي)":isMale(v)?" (رجالي)":"");
+  if(v) return ""+T("الصوت المستخدم")+": "+v.name+(isFemale(v)?" ("+T("نسائي)")+"":isMale(v)?" ("+T("رجالي)")+"":"");
   return /iPhone|iPad|iPod/i.test(navigator.userAgent)
-    ? "لم يُعثر على صوت عربي. من الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، نزّل صوتاً."
-    : "لم يُعثر على صوت عربي. من إعدادات الهاتف ← اللغة والإدخال ← تحويل النص إلى كلام ← محرك Google ← تثبيت بيانات الصوت ← العربية.";
+    ? ""+T("لم يُعثر على صوت عربي. من الإعدادات")+(LANG==="en"?" → ":" ← ")+T("تسهيلات الاستخدام")+(LANG==="en"?" → ":" ← ")+T("المحتوى المنطوق")+(LANG==="en"?" → ":" ← ")+T("الأصوات")+(LANG==="en"?" → ":" ← ")+T("العربية، نزّل صوتاً")+"."
+    : ""+T("لم يُعثر على صوت عربي. من إعدادات الهاتف")+(LANG==="en"?" → ":" ← ")+T("اللغة والإدخال")+(LANG==="en"?" → ":" ← ")+T("تحويل النص إلى كلام")+(LANG==="en"?" → ":" ← ")+T("محرك")+" Google ← "+T("تثبيت بيانات الصوت")+(LANG==="en"?" → ":" ← ")+T("العربية")+".";
 }
 // Plain-language card about alarms while the app is closed, different for each kind of phone.
 function closedAlarmCard(){
-  if(NATIVE&&!exactOK) return `<div class="card" style="display:grid;gap:10px;border-color:var(--amber)"><b>اسمح للمنبّه بالرنين في موعده</b><p class="hint">اضغط الزر ثم فعّل «السماح» أمام أدويتي.</p><button class="btn" id="askExact2">السماح بالمنبّهات</button></div>`;
+  if(NATIVE&&!exactOK) return `<div class="card" style="display:grid;gap:10px;border-color:var(--amber)"><b>${T("اسمح للمنبّه بالرنين في موعده")}</b><p class="hint">${T("اضغط الزر ثم فعّل «السماح» أمام أدويتي")}.</p><button class="btn" id="askExact2">${T("السماح بالمنبّهات")}</button></div>`;
   if(NATIVE) return `<div class="card" style="display:grid;gap:10px;border-color:var(--ok)">
-    <b style="color:var(--ok)">✓ المنبّه يرنّ حتى والتطبيق مغلق</b>
-    <p class="hint">سيرنّ الهاتف في موعد كل جرعة ويُظهر اسم الدواء. لا تحتاج لفتح التطبيق.</p>
-    <button class="btn" id="nativeTest">جرّب المنبّه الآن</button>
-    <p class="hint">إذا لم يرنّ على هاتفك: إعدادات الهاتف ← التطبيقات ← أدويتي ← البطارية ← اختر «بلا قيود».</p></div>`;
+    <b style="color:var(--ok)">✓ ${T("المنبّه يرنّ حتى والتطبيق مغلق")}</b>
+    <p class="hint">${T("سيرنّ الهاتف في موعد كل جرعة ويُظهر اسم الدواء. لا تحتاج لفتح التطبيق")}.</p>
+    <button class="btn" id="nativeTest">${T("جرّب المنبّه الآن")}</button>
+    <p class="hint">${T("إذا لم يرنّ على هاتفك: إعدادات الهاتف")} ← ${T("التطبيقات")} ← ${T("أدويتي")} ← ${T("البطارية")} ← ${T("اختر «بلا قيود»")}.</p></div>`;
   if(IS_ANDROID) return `<div class="card" style="display:grid;gap:10px">${apkBlock()}</div>`;
   if(IS_IOS) return `<div class="card" style="display:grid;gap:10px">
-    <b>على الآيفون</b>
-    <p class="hint">المنبّه يرنّ والتطبيق مفتوح. اترك التطبيق مفتوحاً وفعّل «إبقاء الشاشة مضاءة» بالأعلى.</p>
-    <button class="btn ghost" id="ics">أضف المواعيد إلى تقويم الآيفون</button>
-    <p class="hint">التقويم يرنّ في موعد كل دواء حتى والتطبيق مغلق.</p></div>`;
+    <b>${T("على الآيفون")}</b>
+    <p class="hint">${T("المنبّه يرنّ والتطبيق مفتوح. اترك التطبيق مفتوحاً وفعّل «إبقاء الشاشة مضاءة» بالأعلى")}.</p>
+    <button class="btn ghost" id="ics">${T("أضف المواعيد إلى تقويم الآيفون")}</button>
+    <p class="hint">${T("التقويم يرنّ في موعد كل دواء حتى والتطبيق مغلق")}.</p></div>`;
   return "";
 }
 function apkBlock(){
-  return `<b>حمّل تطبيق «أدويتي» لأندرويد</b>
-    <p class="hint">ليرنّ المنبّه في موعد الدواء حتى والتطبيق مغلق. مجاني بالكامل.</p>
-    <a class="btn" href="${APK_URL}" rel="noopener">تحميل التطبيق</a>
-    <p class="hint">بعد التحميل افتح الملف واضغط «تثبيت». إذا طلب الهاتف إذناً، اضغط «الإعدادات» ثم «السماح من هذا المصدر».</p>`;
+  return `<b>${T("حمّل تطبيق «أدويتي» لأندرويد")}</b>
+    <p class="hint">${T("ليرنّ المنبّه في موعد الدواء حتى والتطبيق مغلق. مجاني بالكامل")}.</p>
+    <a class="btn" href="${APK_URL}" rel="noopener">${T("تحميل التطبيق")}</a>
+    <p class="hint">${T("بعد التحميل افتح الملف واضغط «تثبيت». إذا طلب الهاتف إذناً، اضغط «الإعدادات» ثم «السماح من هذا المصدر»")}.</p>`;
 }
 function restore(txt){
   try{const d=JSON.parse(txt); if(!d||!Array.isArray(d.meds)||!Array.isArray(d.doctors)) throw 0;
-    S=Object.assign(blank(),d); S.settings=Object.assign(blank().settings,d.settings||{}); save(); toast("تمت الاستعادة"); render();}
-  catch(e){toast("الملف أو النص غير صالح كنسخة احتياطية");}
+    S=Object.assign(blank(),d); S.settings=Object.assign(blank().settings,d.settings||{}); save(); toast(""+T("تمت الاستعادة")+""); render();}
+  catch(e){toast(""+T("الملف أو النص غير صالح كنسخة احتياطية")+"");}
 }
 function download(name,text,type){
-  try{const b=new Blob([text],{type}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); toast("تم تجهيز الملف: "+name);}
-  catch(e){toast("لم يسمح المتصفح بحفظ الملف");}
+  try{const b=new Blob([text],{type}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); toast(""+T("تم تجهيز الملف")+": "+name);}
+  catch(e){toast(""+T("لم يسمح المتصفح بحفظ الملف")+"");}
 }
 function exportICS(){
   const active=S.meds.filter(m=>!m.paused && !(m.days && addDays(m.start,Number(m.days)-1)<today()));
-  if(!active.length){toast("لا توجد أدوية نشطة لإضافتها");return;}
-  const L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//MedReminder//AR","CALSCALE:GREGORIAN","X-WR-CALNAME:أدويتي"];
+  if(!active.length){toast(""+T("لا توجد أدوية نشطة لإضافتها")+"");return;}
+  const L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//MedReminder//AR","CALSCALE:GREGORIAN","X-WR-CALNAME:"+T("أدويتي")+""];
   const stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"");
   const icsEsc=s=>String(s||"").replace(/[\\,;]/g,m=>"\\"+m).replace(/\n/g,"\\n");
   active.forEach(m=>(m.times||[]).forEach(t=>{
@@ -858,7 +874,7 @@ function exportICS(){
     const food=FOOD[m.food||""];
     L.push("BEGIN:VEVENT","UID:"+m.id+"-"+t.replace(":","")+"@med.local","DTSTAMP:"+stamp,"DTSTART:"+start+"T"+t.replace(":","")+"00","DURATION:PT10M",rr,
       "SUMMARY:"+icsEsc("💊 "+m.name+" — "+(m.dose||"")),"DESCRIPTION:"+icsEsc([m.dose,food,m.notes].filter(Boolean).join(" · ")),
-      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+icsEsc("حان موعد "+m.name+" — "+(m.dose||"")),"TRIGGER:PT0M","END:VALARM","END:VEVENT");
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+icsEsc(""+T("حان موعد")+" "+m.name+" — "+(m.dose||"")),"TRIGGER:PT0M","END:VALARM","END:VEVENT");
   }));
   L.push("END:VCALENDAR");
   download("medicine-schedule.ics",L.join("\r\n"),"text/calendar");
@@ -874,42 +890,42 @@ function sheet(html,onMount){
   f.querySelectorAll("[data-close]").forEach(b=>b.onclick=close);
   onMount(f,close); const first=f.querySelector("input,select"); if(first) setTimeout(()=>first.focus(),60);
 }
-const head=t=>`<div class="sec-head"><h2>${t}</h2><button type="button" class="icon-btn" data-close aria-label="إغلاق">${I.x}</button></div>`;
+const head=t=>`<div class="sec-head"><h2>${t}</h2><button type="button" class="icon-btn" data-close aria-label="${T("إغلاق")}">${I.x}</button></div>`;
 function delRow(label,onYes){ // two-step delete inside the sheet
   return {html:`<div class="row" data-delrow><button type="button" class="btn danger sm" data-del>${label}</button></div>`,
     bind(f,close){const r=f.querySelector("[data-delrow]"); if(!r)return; r.querySelector("[data-del]").onclick=()=>{
-      r.innerHTML=`<span class="hint">تأكيد الحذف؟</span><button type="button" class="btn danger sm" data-yes>نعم، احذف</button><button type="button" class="btn ghost sm" data-no>إلغاء</button>`;
-      r.querySelector("[data-yes]").onclick=()=>{onYes();save();close();render();toast("تم الحذف");};
+      r.innerHTML=`<span class="hint">${T("تأكيد الحذف؟")}</span><button type="button" class="btn danger sm" data-yes>${T("نعم، احذف")}</button><button type="button" class="btn ghost sm" data-no>${T("إلغاء")}</button>`;
+      r.querySelector("[data-yes]").onclick=()=>{onYes();save();close();render();toast(""+T("تم الحذف")+"");};
       r.querySelector("[data-no]").onclick=()=>{r.innerHTML=`<button type="button" class="btn danger sm" data-del>${label}</button>`;delRow(label,onYes).bind(f,close);};}}};
 }
 
 function docSheet(d){
   const isNew=!d; d=d||{name:"",specialty:"",phone:"",clinic:""};
-  const del=!isNew&&delRow("حذف الطبيب",()=>{S.doctors=S.doctors.filter(x=>x.id!==d.id); S.rx.forEach(r=>{if(r.doctorId===d.id)r.doctorId="";});});
-  sheet(`${head(isNew?"إضافة طبيب":"تعديل بيانات الطبيب")}
-    <div class="field"><label for="dn">اسم الطبيب</label><input id="dn" value="${esc(d.name)}" placeholder="مثال: أحمد سامي" required></div>
-    <div class="field"><label for="ds">التخصص</label><input id="ds" list="specs" value="${esc(d.specialty)}" placeholder="اختر أو اكتب التخصص"><datalist id="specs">${SPECS.map(s=>`<option value="${s}">`).join("")}</datalist></div>
-    <div class="two"><div class="field"><label for="dp">رقم العيادة</label><input id="dp" type="tel" dir="ltr" value="${esc(d.phone)}"></div>
-    <div class="field"><label for="dc">العيادة / المستشفى</label><input id="dc" value="${esc(d.clinic)}"></div></div>
+  const del=!isNew&&delRow(""+T("حذف الطبيب")+"",()=>{S.doctors=S.doctors.filter(x=>x.id!==d.id); S.rx.forEach(r=>{if(r.doctorId===d.id)r.doctorId="";});});
+  sheet(`${head(isNew?""+T("إضافة طبيب")+"":""+T("تعديل بيانات الطبيب")+"")}
+    <div class="field"><label for="dn">${T("اسم الطبيب")}</label><input id="dn" value="${esc(d.name)}" placeholder="${T("مثال: أحمد سامي")}" required></div>
+    <div class="field"><label for="ds">${T("التخصص")}</label><input id="ds" list="specs" value="${esc(d.specialty)}" placeholder="${T("اختر أو اكتب التخصص")}"><datalist id="specs">${SPECS.map(s=>`<option value="${s}">`).join("")}</datalist></div>
+    <div class="two"><div class="field"><label for="dp">${T("رقم العيادة")}</label><input id="dp" type="tel" dir="ltr" value="${esc(d.phone)}"></div>
+    <div class="field"><label for="dc">${T("العيادة / المستشفى")}</label><input id="dc" value="${esc(d.clinic)}"></div></div>
     <p class="err" id="er" hidden></p>
-    <button class="btn block" type="submit">حفظ</button>${del?del.html:""}`,
+    <button class="btn block" type="submit">${T("حفظ")}</button>${del?del.html:""}`,
   (f,close)=>{ if(del)del.bind(f,close);
-    f.onsubmit=e=>{e.preventDefault(); const name=$("#dn").value.trim().replace(/^د\.?\s*/,"");
-      if(!name){const er=$("#er");er.textContent="اكتب اسم الطبيب";er.hidden=false;return;}
+    f.onsubmit=e=>{e.preventDefault(); const name=$("#dn").value.trim().replace(new RegExp("^("+""+T("د")+""+"|Dr)\\.?\\s*","i"),"");
+      if(!name){const er=$("#er");er.textContent=""+T("اكتب اسم الطبيب")+"";er.hidden=false;return;}
       Object.assign(d,{name,specialty:$("#ds").value.trim(),phone:$("#dp").value.trim(),clinic:$("#dc").value.trim()});
-      if(isNew){d.id=uid();S.doctors.push(d);} save(); close(); render(); toast(isNew?"تمت إضافة الطبيب":"تم الحفظ");};
+      if(isNew){d.id=uid();S.doctors.push(d);} save(); close(); render(); toast(isNew?""+T("تمت إضافة الطبيب")+"":""+T("تم الحفظ")+"");};
   });
 }
 
 function rxSheet(r){
-  if(!S.doctors.length){toast("أضف طبيباً أولاً"); tab="doctors"; render(); docSheet(); return;}
+  if(!S.doctors.length){toast(""+T("أضف طبيباً أولاً")+""); tab="doctors"; render(); docSheet(); return;}
   const isNew=!r; r=r||{doctorId:S.doctors[S.doctors.length-1].id,date:today(),title:""};
-  const del=!isNew&&delRow("حذف الوصفة وأدويتها",()=>{S.rx=S.rx.filter(x=>x.id!==r.id);S.meds=S.meds.filter(m=>m.rxId!==r.id);});
-  sheet(`${head(isNew?"وصفة جديدة":"تعديل الوصفة")}
-    <div class="field"><label for="rd">الطبيب</label><select id="rd">${S.doctors.map(d=>`<option value="${d.id}" ${d.id===r.doctorId?"selected":""}>د. ${esc(d.name)}${d.specialty?" — "+esc(d.specialty):""}</option>`).join("")}</select></div>
-    <div class="two"><div class="field"><label for="rdt">تاريخ الوصفة</label><input id="rdt" type="date" value="${esc(r.date)}"></div>
-    <div class="field"><label for="rt">التشخيص (اسم المرض)</label><input id="rt" list="dzlist2" value="${esc(r.title)}" placeholder="مثال: ضغط الدم"><datalist id="dzlist2">${["ضغط الدم","السكر","الكوليسترول","القلب","الغدة الدرقية","المعدة","المفاصل","الحساسية"].map(x=>`<option value="${x}">`).join("")}</datalist></div></div>
-    <button class="btn block" type="submit">${isNew?"حفظ ثم إضافة الأدوية":"حفظ"}</button>${del?del.html:""}`,
+  const del=!isNew&&delRow(""+T("حذف الوصفة وأدويتها")+"",()=>{S.rx=S.rx.filter(x=>x.id!==r.id);S.meds=S.meds.filter(m=>m.rxId!==r.id);});
+  sheet(`${head(isNew?""+T("وصفة جديدة")+"":""+T("تعديل الوصفة")+"")}
+    <div class="field"><label for="rd">${T("الطبيب")}</label><select id="rd">${S.doctors.map(d=>`<option value="${d.id}" ${d.id===r.doctorId?"selected":""}>${T("د")}. ${esc(d.name)}${d.specialty?" — "+esc(d.specialty):""}</option>`).join("")}</select></div>
+    <div class="two"><div class="field"><label for="rdt">${T("تاريخ الوصفة")}</label><input id="rdt" type="date" value="${esc(r.date)}"></div>
+    <div class="field"><label for="rt">${T("التشخيص (اسم المرض)")}</label><input id="rt" list="dzlist2" value="${esc(r.title)}" placeholder="${T("مثال: ضغط الدم")}"><datalist id="dzlist2">${[""+T("ضغط الدم")+"",""+T("السكر")+"",""+T("الكوليسترول")+"",""+T("القلب")+"",""+T("الغدة الدرقية")+"",""+T("المعدة")+"",""+T("المفاصل")+"",""+T("الحساسية")+""].map(x=>`<option value="${x}">`).join("")}</datalist></div></div>
+    <button class="btn block" type="submit">${isNew?""+T("حفظ ثم إضافة الأدوية")+"":""+T("حفظ")+""}</button>${del?del.html:""}`,
   (f,close)=>{ if(del)del.bind(f,close);
     f.onsubmit=e=>{e.preventDefault(); Object.assign(r,{doctorId:$("#rd").value,date:$("#rdt").value,title:$("#rt").value.trim()});
       if(isNew){r.id=uid();S.rx.push(r);} save(); close(); tab="rx"; render(); if(isNew) medSheet(null,r.id);};
@@ -920,36 +936,36 @@ function medSheet(m,rxId){
   const isNew=!m; m=m||{rxId,name:"",dose:"",times:["09:00"],food:"after",start:today(),days:"",notes:"",paused:false,prn:false,gapH:"",maxDay:""};
   let times=m.times&&m.times.length?[...m.times]:["09:00"]; let prn=!!m.prn;
   const otc=!m.rxId;
-  const del=!isNew&&delRow("حذف الدواء",()=>{S.meds=S.meds.filter(x=>x.id!==m.id);S.prn=S.prn.filter(x=>x.medId!==m.id);});
-  sheet(`${head(isNew?(otc?"دواء بدون وصفة":"إضافة دواء"):"تعديل الدواء")}
-    ${otc?`<p class="hint">للفيتامينات والمكملات والمسكّنات التي تأخذها بدون وصفة طبيب.</p>`:""}
-    <div class="field"><label for="mn">اسم الدواء</label><input id="mn" list="${otc?"otcnames":""}" value="${esc(m.name)}" placeholder="${otc?"مثال: فيتامين د 1000 وحدة":"مثال: كونكور 5 مجم"}">${otc?`<datalist id="otcnames">${["فيتامين د","فيتامين سي","فيتامين ب12","أوميجا 3","حديد","كالسيوم","ماغنسيوم","زنك","مالتي فيتامين","باراسيتامول","إيبوبروفين","مضاد حموضة","دواء برد"].map(s=>`<option value="${s}">`).join("")}</datalist>`:""}</div>
-    <div class="field"><label for="md">الجرعة</label><input id="md" list="doses" value="${esc(m.dose)}" placeholder="مثال: قرص واحد"><datalist id="doses">${["قرص واحد","نصف قرص","قرصان","كبسولة واحدة","ملعقة صغيرة 5 مل","ملعقة كبيرة 15 مل","نقطتان","حقنة واحدة","بخة واحدة","وحدات أنسولين","فوار واحد"].map(s=>`<option value="${s}">`).join("")}</datalist></div>
-    <div class="field"><label>طريقة الأخذ</label><div class="presets seg" id="kind"><button type="button" data-k="0">مواعيد ثابتة يومياً</button><button type="button" data-k="1">عند اللزوم فقط</button></div></div>
-    <div id="prnBox" style="display:grid;gap:8px"><p class="hint">مثل المسكّنات: لا يرن له منبّه، وتسجّل الجرعة من شاشة «اليوم» عندما تأخذها. التطبيق ينبّهك إذا أخذتها قبل المدة المحددة أو تجاوزت الحد اليومي.</p>
-      <div class="two"><div class="field"><label for="mg">أقل مدة بين الجرعتين (ساعات)</label><input id="mg" type="number" min="1" max="48" inputmode="numeric" value="${esc(m.gapH)}" placeholder="مثال: 6"></div>
-      <div class="field"><label for="mx">أقصى عدد جرعات في اليوم</label><input id="mx" type="number" min="1" max="24" inputmode="numeric" value="${esc(m.maxDay)}" placeholder="مثال: 4"></div></div></div>
-    <div class="field" id="schedBox"><label>مواعيد الجرعات خلال اليوم</label>
-      <div class="presets" id="pre"><button type="button" data-p="09:00">مرة</button><button type="button" data-p="09:00,21:00">مرتين</button><button type="button" data-p="08:00,14:00,20:00">3 مرات</button><button type="button" data-p="06:00,14:00,22:00">كل 8 ساعات</button><button type="button" data-p="08:00,12:00,16:00,20:00">4 مرات</button></div>
+  const del=!isNew&&delRow(""+T("حذف الدواء")+"",()=>{S.meds=S.meds.filter(x=>x.id!==m.id);S.prn=S.prn.filter(x=>x.medId!==m.id);});
+  sheet(`${head(isNew?(otc?""+T("دواء بدون وصفة")+"":""+T("إضافة دواء")+""):""+T("تعديل الدواء")+"")}
+    ${otc?`<p class="hint">${T("للفيتامينات والمكملات والمسكّنات التي تأخذها بدون وصفة طبيب")}.</p>`:""}
+    <div class="field"><label for="mn">${T("اسم الدواء")}</label><input id="mn" list="${otc?"otcnames":""}" value="${esc(m.name)}" placeholder="${otc?""+T("مثال: فيتامين د 1000 وحدة")+"":""+T("مثال: كونكور 5 مجم")+""}">${otc?`<datalist id="otcnames">${[""+T("فيتامين د")+"",""+T("فيتامين سي")+"",""+T("فيتامين ب")+"12",""+T("أوميجا")+" 3",""+T("حديد")+"",""+T("كالسيوم")+"",""+T("ماغنسيوم")+"",""+T("زنك")+"",""+T("مالتي فيتامين")+"",""+T("باراسيتامول")+"",""+T("إيبوبروفين")+"",""+T("مضاد حموضة")+"",""+T("دواء برد")+""].map(s=>`<option value="${s}">`).join("")}</datalist>`:""}</div>
+    <div class="field"><label for="md">${T("الجرعة")}</label><input id="md" list="doses" value="${esc(m.dose)}" placeholder="${T("مثال: قرص واحد")}"><datalist id="doses">${[""+T("قرص واحد")+"",""+T("نصف قرص")+"",""+T("قرصان")+"",""+T("كبسولة واحدة")+"",""+T("ملعقة صغيرة 5 مل")+"",""+T("ملعقة كبيرة 15 مل")+"",""+T("نقطتان")+"",""+T("حقنة واحدة")+"",""+T("بخة واحدة")+"",""+T("وحدات أنسولين")+"",""+T("فوار واحد")+""].map(s=>`<option value="${s}">`).join("")}</datalist></div>
+    <div class="field"><label>${T("طريقة الأخذ")}</label><div class="presets seg" id="kind"><button type="button" data-k="0">${T("مواعيد ثابتة يومياً")}</button><button type="button" data-k="1">${T("عند اللزوم فقط")}</button></div></div>
+    <div id="prnBox" style="display:grid;gap:8px"><p class="hint">${T("مثل المسكّنات: لا يرن له منبّه، وتسجّل الجرعة من شاشة «اليوم» عندما تأخذها. التطبيق ينبّهك إذا أخذتها قبل المدة المحددة أو تجاوزت الحد اليومي")}.</p>
+      <div class="two"><div class="field"><label for="mg">${T("أقل مدة بين الجرعتين (ساعات)")}</label><input id="mg" type="number" min="1" max="48" inputmode="numeric" value="${esc(m.gapH)}" placeholder="${T("مثال")}: 6"></div>
+      <div class="field"><label for="mx">${T("أقصى عدد جرعات في اليوم")}</label><input id="mx" type="number" min="1" max="24" inputmode="numeric" value="${esc(m.maxDay)}" placeholder="${T("مثال")}: 4"></div></div></div>
+    <div class="field" id="schedBox"><label>${T("مواعيد الجرعات خلال اليوم")}</label>
+      <div class="presets" id="pre"><button type="button" data-p="09:00">${T("مرة")}</button><button type="button" data-p="09:00,21:00">${T("مرتين")}</button><button type="button" data-p="08:00,14:00,20:00">3 ${T("مرات")}</button><button type="button" data-p="06:00,14:00,22:00">${T("كل 8 ساعات")}</button><button type="button" data-p="08:00,12:00,16:00,20:00">4 ${T("مرات")}</button></div>
       <div class="times-edit" id="tl"></div>
-      <button type="button" class="btn line sm" id="addT" style="justify-self:start">${I.plus} إضافة موعد</button></div>
-    <div class="field"><label for="mf">التعليمات</label><select id="mf">${Object.entries(FOOD).map(([k,v])=>`<option value="${k}" ${k===(m.food||"")?"selected":""}>${v||"بدون تعليمات"}</option>`).join("")}</select></div>
-    <div class="two" id="durBox"><div class="field"><label for="ms">يبدأ من</label><input id="ms" type="date" value="${esc(m.start)}"></div>
-    <div class="field"><label for="mdays">المدة بالأيام</label><input id="mdays" type="number" min="1" inputmode="numeric" value="${esc(m.days)}" placeholder="فارغ = مستمر"></div></div>
-    <div class="field"><label for="mdz">لعلاج (اسم المرض)</label><input id="mdz" list="dzlist" value="${esc(m.disease||"")}" placeholder="مثال: ضغط الدم"><datalist id="dzlist">${["ضغط الدم","السكر","الكوليسترول","القلب","الغدة الدرقية","المعدة","القولون","المفاصل","الصداع","الحساسية","الربو","الأعصاب","البرد والإنفلونزا","فيتامينات ومكملات","سيولة الدم","البروستاتا","هشاشة العظام"].map(x=>`<option value="${x}">`).join("")}</datalist></div>
-    <div class="field"><label for="mno">ملاحظات</label><input id="mno" value="${esc(m.notes)}" placeholder="اختياري"></div>
-    ${!isNew?`<div class="set-item"><div><b>إيقاف مؤقت للدواء</b><small>لن تظهر جرعاته ولن يرن له منبّه</small></div><input type="checkbox" class="switch" id="mp" ${m.paused?"checked":""} aria-label="إيقاف مؤقت"></div>`:""}
+      <button type="button" class="btn line sm" id="addT" style="justify-self:start">${I.plus} ${T("إضافة موعد")}</button></div>
+    <div class="field"><label for="mf">${T("التعليمات")}</label><select id="mf">${Object.entries(FOOD).map(([k,v])=>`<option value="${k}" ${k===(m.food||"")?"selected":""}>${v||""+T("بدون تعليمات")+""}</option>`).join("")}</select></div>
+    <div class="two" id="durBox"><div class="field"><label for="ms">${T("يبدأ من")}</label><input id="ms" type="date" value="${esc(m.start)}"></div>
+    <div class="field"><label for="mdays">${T("المدة بالأيام")}</label><input id="mdays" type="number" min="1" inputmode="numeric" value="${esc(m.days)}" placeholder="${T("فارغ")} = ${T("مستمر")}"></div></div>
+    <div class="field"><label for="mdz">${T("لعلاج (اسم المرض)")}</label><input id="mdz" list="dzlist" value="${esc(m.disease||"")}" placeholder="${T("مثال: ضغط الدم")}"><datalist id="dzlist">${[""+T("ضغط الدم")+"",""+T("السكر")+"",""+T("الكوليسترول")+"",""+T("القلب")+"",""+T("الغدة الدرقية")+"",""+T("المعدة")+"",""+T("القولون")+"",""+T("المفاصل")+"",""+T("الصداع")+"",""+T("الحساسية")+"",""+T("الربو")+"",""+T("الأعصاب")+"",""+T("البرد والإنفلونزا")+"",""+T("فيتامينات ومكملات")+"",""+T("سيولة الدم")+"",""+T("البروستاتا")+"",""+T("هشاشة العظام")+""].map(x=>`<option value="${x}">`).join("")}</datalist></div>
+    <div class="field"><label for="mno">${T("ملاحظات")}</label><input id="mno" value="${esc(m.notes)}" placeholder="${T("اختياري")}"></div>
+    ${!isNew?`<div class="set-item"><div><b>${T("إيقاف مؤقت للدواء")}</b><small>${T("لن تظهر جرعاته ولن يرن له منبّه")}</small></div><input type="checkbox" class="switch" id="mp" ${m.paused?"checked":""} aria-label="${T("إيقاف مؤقت")}"></div>`:""}
     <p class="err" id="er" hidden></p>
-    <button class="btn block" type="submit">حفظ الدواء</button>${del?del.html:""}`,
+    <button class="btn block" type="submit">${T("حفظ الدواء")}</button>${del?del.html:""}`,
   (f,close)=>{ if(del)del.bind(f,close);
     // Hour, minute and AM/PM as three large lists: easier than the phone's clock picker and allows any minute.
     const drawT=()=>{ $("#tl").innerHTML=times.map((t,i)=>{ let [h,mi]=t.split(":").map(Number); const pm=h>=12; const h12=h%12||12;
         return `<div class="t" data-i="${i}"><span class="tn">${i+1}</span>
-        <select data-p="h" aria-label="الساعة للموعد ${i+1}">${Array.from({length:12},(_,k)=>k+1).map(x=>`<option value="${x}" ${x===h12?"selected":""}>${x}</option>`).join("")}</select>
+        <select data-p="h" aria-label="${T("الساعة للموعد")} ${i+1}">${Array.from({length:12},(_,k)=>k+1).map(x=>`<option value="${x}" ${x===h12?"selected":""}>${x}</option>`).join("")}</select>
         <b>:</b>
-        <select data-p="m" aria-label="الدقيقة للموعد ${i+1}">${Array.from({length:60},(_,k)=>k).map(x=>`<option value="${x}" ${x===mi?"selected":""}>${pad(x)}</option>`).join("")}</select>
-        <select data-p="ap" aria-label="صباحاً أو مساءً للموعد ${i+1}"><option value="am" ${!pm?"selected":""}>صباحاً</option><option value="pm" ${pm?"selected":""}>مساءً</option></select>
-        ${times.length>1?`<button type="button" class="icon-btn" data-rm="${i}" aria-label="حذف الموعد">${I.x}</button>`:""}</div>`;}).join("");
+        <select data-p="m" aria-label="${T("الدقيقة للموعد")} ${i+1}">${Array.from({length:60},(_,k)=>k).map(x=>`<option value="${x}" ${x===mi?"selected":""}>${pad(x)}</option>`).join("")}</select>
+        <select data-p="ap" aria-label="${T("صباحاً أو مساءً للموعد")} ${i+1}"><option value="am" ${!pm?"selected":""}>${T("صباحاً")}</option><option value="pm" ${pm?"selected":""}>${T("مساءً")}</option></select>
+        ${times.length>1?`<button type="button" class="icon-btn" data-rm="${i}" aria-label="${T("حذف الموعد")}">${I.x}</button>`:""}</div>`;}).join("");
       $("#tl").querySelectorAll(".t").forEach(row=>row.onchange=()=>{ const g=p=>row.querySelector(`[data-p="${p}"]`).value;
         let h=Number(g("h"))%12; if(g("ap")==="pm") h+=12; times[row.dataset.i]=pad(h)+":"+pad(Number(g("m"))); });
       $("#tl").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{times.splice(b.dataset.rm,1);drawT();}); };
@@ -961,37 +977,37 @@ function medSheet(m,rxId){
     $("#pre").onclick=e=>{const b=e.target.closest("[data-p]");if(!b)return;times=b.dataset.p.split(",");drawT();};
     f.onsubmit=e=>{e.preventDefault(); const er=$("#er");
       const name=$("#mn").value.trim(); const clean=[...new Set(times.filter(Boolean))].sort();
-      if(!name){er.textContent="اكتب اسم الدواء";er.hidden=false;return;}
-      if(!prn&&!clean.length){er.textContent="أضف موعداً واحداً على الأقل";er.hidden=false;return;}
+      if(!name){er.textContent=""+T("اكتب اسم الدواء")+"";er.hidden=false;return;}
+      if(!prn&&!clean.length){er.textContent=""+T("أضف موعداً واحداً على الأقل")+"";er.hidden=false;return;}
       const num=v=>v?String(Math.max(1,parseInt(v)||1)):"";
       Object.assign(m,{prn,gapH:prn?num($("#mg").value):"",maxDay:prn?num($("#mx").value):""});
       Object.assign(m,{name,dose:$("#md").value.trim(),times:prn?[]:clean,food:$("#mf").value,start:$("#ms").value||today(),days:$("#mdays").value?String(Math.max(1,parseInt($("#mdays").value))):"",disease:$("#mdz").value.trim(),notes:$("#mno").value.trim()});
       const mp=$("#mp"); if(mp) m.paused=mp.checked;
-      if(isNew){m.id=uid();S.meds.push(m);} save(); close(); render(); toast(isNew?"تمت إضافة الدواء ومواعيده":"تم الحفظ"); unlockAudio();};
+      if(isNew){m.id=uid();S.meds.push(m);} save(); close(); render(); toast(isNew?""+T("تمت إضافة الدواء ومواعيده")+"":""+T("تم الحفظ")+""); unlockAudio();};
   });
 }
 
 function welcome(){
-  sheet(`<div style="display:grid;gap:6px;justify-items:center;text-align:center;padding-top:6px">${pill(56,"var(--teal)")}<h2>أهلاً بك في أدويتي</h2><p class="hint">سجّل أطباءك ووصفاتهم وأدويتك، وسينبّهك التطبيق بصوت عند كل جرعة. كل البيانات تبقى على هاتفك فقط.</p></div>
-    <div class="field"><label for="wn">اسمك</label><input id="wn" placeholder="اكتب اسمك" autocomplete="name"></div>
-    <label class="set-item" style="cursor:pointer"><div><b>أضف بيانات تجريبية</b><small>طبيب ووصفة ودواءان للتجربة، يمكنك حذفها لاحقاً</small></div><input type="checkbox" class="switch" id="wdemo"></label>
-    <button class="btn block" type="submit">ابدأ</button>
+  sheet(`<div style="display:flex;justify-content:center">${langSwitch()}</div><div style="display:grid;gap:6px;justify-items:center;text-align:center;padding-top:6px">${pill(56,"var(--teal)")}<h2>${T("أهلاً بك في أدويتي")}</h2><p class="hint">${T("سجّل أطباءك ووصفاتهم وأدويتك، وسينبّهك التطبيق بصوت عند كل جرعة. كل البيانات تبقى على هاتفك فقط")}.</p></div>
+    <div class="field"><label for="wn">${T("اسمك")}</label><input id="wn" placeholder="${T("اكتب اسمك")}" autocomplete="name"></div>
+    <label class="set-item" style="cursor:pointer"><div><b>${T("أضف بيانات تجريبية")}</b><small>${T("طبيب ووصفة ودواءان للتجربة، يمكنك حذفها لاحقاً")}</small></div><input type="checkbox" class="switch" id="wdemo"></label>
+    <button class="btn block" type="submit">${T("ابدأ")}</button>
     ${GIFT}`,
   (f,close)=>{f.onsubmit=e=>{e.preventDefault(); S.profile.name=$("#wn").value.trim();
     if($("#wdemo").checked) seedDemo(); save(); close(); unlockAudio(); render();
     if(notifySupported()&&Notification.permission==="default") try{Notification.requestPermission();}catch(_){} };});
 }
 function seedDemo(){
-  const d1={id:uid(),name:"منى عبد الرحمن",specialty:"قلب وأوعية دموية",phone:"0223456789",clinic:"عيادة المعادي",demo:1};
-  const d2={id:uid(),name:"كريم فوزي",specialty:"سكر وغدد صماء",phone:"",clinic:"",demo:1};
-  const r1={id:uid(),doctorId:d1.id,date:addDays(today(),-10),title:"متابعة ضغط"};
+  const d1={id:uid(),name:""+T("منى عبد الرحمن")+"",specialty:""+T("قلب وأوعية دموية")+"",phone:"0223456789",clinic:""+T("عيادة المعادي")+"",demo:1};
+  const d2={id:uid(),name:""+T("كريم فوزي")+"",specialty:""+T("سكر وغدد صماء")+"",phone:"",clinic:"",demo:1};
+  const r1={id:uid(),doctorId:d1.id,date:addDays(today(),-10),title:""+T("متابعة ضغط")+""};
   const r2={id:uid(),doctorId:d2.id,date:addDays(today(),-3),title:""};
   S.doctors.push(d1,d2); S.rx.push(r1,r2);
-  S.meds.push({id:uid(),rxId:r1.id,name:"دواء الضغط (مثال)",disease:"ضغط الدم",dose:"قرص واحد",times:["09:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
-    {id:uid(),rxId:r1.id,name:"أسبرين 81 (مثال)",disease:"سيولة الدم",dose:"قرص واحد",times:["14:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
-    {id:uid(),rxId:r2.id,name:"ميتفورمين 500 (مثال)",disease:"السكر",dose:"قرص واحد",times:["08:00","20:00"],food:"with",start:addDays(today(),-3),days:"30",notes:""},
-    {id:uid(),rxId:"",name:"فيتامين د (مثال)",disease:"فيتامينات ومكملات",dose:"كبسولة واحدة",times:["10:00"],food:"with",start:today(),days:"",notes:""},
-    {id:uid(),rxId:"",name:"باراسيتامول 500 (مثال)",dose:"قرص واحد",times:[],prn:true,gapH:"6",maxDay:"4",food:"after",start:today(),days:"",disease:"الصداع",notes:""});
+  S.meds.push({id:uid(),rxId:r1.id,name:""+T("دواء الضغط (مثال)")+"",disease:""+T("ضغط الدم")+"",dose:""+T("قرص واحد")+"",times:["09:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
+    {id:uid(),rxId:r1.id,name:""+T("أسبرين 81 (مثال)")+"",disease:""+T("سيولة الدم")+"",dose:""+T("قرص واحد")+"",times:["14:00"],food:"after",start:addDays(today(),-10),days:"",notes:""},
+    {id:uid(),rxId:r2.id,name:""+T("ميتفورمين 500 (مثال)")+"",disease:""+T("السكر")+"",dose:""+T("قرص واحد")+"",times:["08:00","20:00"],food:"with",start:addDays(today(),-3),days:"30",notes:""},
+    {id:uid(),rxId:"",name:""+T("فيتامين د (مثال)")+"",disease:""+T("فيتامينات ومكملات")+"",dose:""+T("كبسولة واحدة")+"",times:["10:00"],food:"with",start:today(),days:"",notes:""},
+    {id:uid(),rxId:"",name:""+T("باراسيتامول 500 (مثال)")+"",dose:""+T("قرص واحد")+"",times:[],prn:true,gapH:"6",maxDay:"4",food:"after",start:today(),days:"",disease:""+T("الصداع")+"",notes:""});
 }
 
 /* ---------- toast ---------- */
