@@ -1,5 +1,5 @@
 // Network first for the app page (updates arrive on the next open), cache as offline fallback.
-const C="dawa-v7";const FILES=["./","./index.html","./manifest.webmanifest","./icon.svg"];
+const C="dawa-v8";const FILES=["./","./index.html","./manifest.webmanifest","./icon.svg"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()));});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
 self.addEventListener("fetch",e=>{

@@ -192,6 +192,7 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
+const APP_VERSION="1.5";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:""}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
@@ -343,7 +344,12 @@ function stopRinging(){ ringing=false; if(ringTimer){clearTimeout(ringTimer);rin
 
 let SWREG=null;
 if("serviceWorker" in navigator && location.protocol.startsWith("http")){
-  navigator.serviceWorker.register("sw.js").then(r=>{SWREG=r;}).catch(()=>{});
+  // Check for a new version every time the app opens; when it arrives, reload once so it shows straight away.
+  let reloaded=false; const hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{ if(reloaded||!hadController||document.querySelector(".scrim"))return; reloaded=true; location.reload(); });
+  navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(r=>{SWREG=r; r.update().catch(()=>{});
+    document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") r.update().catch(()=>{}); });
+  }).catch(()=>{});
 }
 function notifySupported(){return "Notification" in window;}
 async function systemNotify(title,body,tag){
@@ -581,7 +587,11 @@ function vMore(){
     <b>حذف كل البيانات</b><p class="hint">يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف.</p>
     <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">حذف كل البيانات</button></div>
   </div>
+  <div class="card set-list">
+    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>صوت مصري، اختيار الصوت النسائي، ونغمات المنبّه</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
+  </div>
   <p class="hint" style="text-align:center">يعمل بدون إنترنت · لا يرسل أي بيانات لأي خادم</p>`;
+  $("#forceUpd").onclick=forceUpdate;
   $("#pname").onchange=e=>{S.profile.name=e.target.value.trim();save();renderTop();toast("تم حفظ الاسم");};
   $("#sp").onchange=e=>{S.settings.speech=e.target.checked;save();};
   $("#vol").onchange=e=>{S.settings.volume=Number(e.target.value);save();unlockAudio();chime();};
@@ -606,6 +616,14 @@ function vMore(){
   $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">متأكد؟ لا يمكن التراجع.</span><button class="btn danger sm" id="wipe2">نعم، احذف</button><button class="btn ghost sm" id="wipeNo">إلغاء</button>`;
     $("#wipe2").onclick=()=>{S=blank();save();toast("تم حذف البيانات");render();welcome();};
     $("#wipeNo").onclick=vMore;};
+}
+// Fetch the newest app files now. Only cached app files are removed; the user's data is untouched.
+async function forceUpdate(){
+  if(!navigator.onLine){ toast("اتصل بالإنترنت أولاً ثم اضغط تحديث"); return; }
+  toast("جاري التحديث…");
+  try{ const regs=await navigator.serviceWorker?.getRegistrations?.()||[]; await Promise.all(regs.map(r=>r.unregister())); }catch(e){}
+  try{ const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); }catch(e){}
+  setTimeout(()=>location.reload(),400);
 }
 function voiceInfo(){
   if(!HAS_TTS) return "هذا المتصفح لا يدعم النطق. جرّب Chrome على أندرويد أو Safari على آيفون.";
