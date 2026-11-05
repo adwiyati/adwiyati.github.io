@@ -112,9 +112,29 @@ main .wrap{padding-block:18px;display:grid;gap:14px}
 .icon-btn{border:0;background:transparent;color:var(--muted);width:36px;height:36px;border-radius:8px;display:grid;place-items:center}
 .icon-btn:hover{background:var(--surface-2);color:var(--ink)}
 
+/* monthly reports */
+.rep{display:grid;gap:12px}
+.rep-head{all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.rep-head:focus-visible{outline:3px solid var(--amber);outline-offset:4px;border-radius:8px}
+.rep-head h3{font-size:1.1rem}
+.rep-head .sub,.rep .sub{display:block;color:var(--muted);font-size:.86rem}
+.rep:not(.open) .rep-head h3{font-size:1rem}
+.rep-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.rep-stats div{background:var(--surface-2);border-radius:10px;padding:8px 4px;display:grid}
+.rep-stats b{font-family:var(--f-display);font-size:1.35rem;font-variant-numeric:tabular-nums;line-height:1.2}
+.rep-stats span{font-size:.75rem;color:var(--muted)}
+.rep-sec{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.rep-row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.rep-date{font-family:var(--f-display);font-weight:600;font-size:.85rem;background:var(--teal-soft);color:var(--teal);border-radius:8px;padding:4px 8px;text-align:center;min-width:4.2em}
+.rep-body{min-width:0}
+.rep-body b,.rep-doc b{font-family:var(--f-display);font-weight:600}
+.rep-body .times{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.rep-doc{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+.rep-doc .avatar{width:36px;height:36px;font-size:.95rem}
+
 /* tab bar */
 .tabs{position:fixed;inset:auto 0 0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
-.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);height:var(--tabh)}
+.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);height:var(--tabh)}
 .tabs button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;align-content:center;gap:2px;font-size:.78rem;font-weight:500}
 .tabs button svg{width:24px;height:24px}
 .tabs button[aria-current="page"]{color:var(--teal);font-weight:600}
@@ -197,7 +217,7 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const APP_VERSION="1.7";
+const APP_VERSION="1.8";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:"",gender:"female"}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
@@ -254,6 +274,7 @@ const I={
   rx:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h3a2 2 0 0 1 0 4H9V7m3 5 4 5m0-4-4 4"/></svg>',
   doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 3v5a4 4 0 0 0 8 0V3"/><path d="M10 12v3a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="11" r="2"/></svg>',
   set:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+  rep:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   plus:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   edit:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
   x:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -452,9 +473,9 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 
 /* ---------- UI: shell ---------- */
 let tab="today";
-try{ const h=location.hash.slice(1); if(["today","rx","doctors","more"].includes(h)) tab=h; }catch(e){}
+try{ const h=location.hash.slice(1); if(["today","rx","doctors","reports","more"].includes(h)) tab=h; }catch(e){}
 function renderTabs(){
-  const T=[["today","اليوم",I.today],["rx","الوصفات",I.rx],["doctors","الأطباء",I.doc],["more","الإعدادات",I.set]];
+  const T=[["today","اليوم",I.today],["rx","الوصفات",I.rx],["doctors","الأطباء",I.doc],["reports","التقارير",I.rep],["more","الإعدادات",I.set]];
   $("#tabs").innerHTML=T.map(([k,l,ic])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${ic}<span>${l}</span></button>`).join("");
 }
 $("#tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;try{history.replaceState(null,"","#"+tab);}catch(_){}render();window.scrollTo(0,0);});
@@ -475,7 +496,7 @@ function renderTop(){
   const u=$("#unlock"); if(u) u.onclick=()=>{unlockAudio(); setTimeout(()=>{chime();},150);};
 }
 
-function render(){ renderTop(); renderTabs(); ({today:vToday,rx:vRx,doctors:vDoctors,more:vMore})[tab](); }
+function render(){ renderTop(); renderTabs(); ({today:vToday,rx:vRx,doctors:vDoctors,reports:vReports,more:vMore})[tab](); }
 
 /* ---------- view: today ---------- */
 function vToday(){
@@ -558,15 +579,15 @@ function medRow(m){const food=FOOD[m.food||""]; const end=m.days?addDays(m.start
 function vRx(){
   const otc=S.meds.filter(m=>!m.rxId||!rxOf(m.rxId));
   let h=`<div class="sec-head"><h2>أدوية بدون وصفة</h2><button class="btn sm ghost" id="addOtc">${I.plus} إضافة</button></div>`;
-  h+= otc.length?`<div class="card rx"><p class="hint">فيتامينات ومكملات ومسكّنات تأخذها من نفسك، بمواعيد ثابتة أو عند اللزوم.</p>${otc.map(medRow).join("")}</div>`
+  h+= otc.length?`<div class="card rx"><p class="hint">فيتامينات ومكملات ومسكّنات تأخذها من نفسك، بمواعيد ثابتة أو عند اللزوم.</p>${[...otc].reverse().map(medRow).join("")}</div>`
     :`<div class="empty"><b>لا توجد أدوية بدون وصفة</b>أضف فيتاميناً يومياً بمواعيد ثابتة، أو مسكّناً تأخذه عند اللزوم فقط.</div>`;
   h+=`<div class="sec-head" style="margin-top:8px"><h2>الوصفات الطبية</h2><button class="btn sm" id="addRx">${I.plus} وصفة جديدة</button></div>`;
   if(!S.rx.length) h+=`<div class="empty"><b>لا توجد وصفات</b>سجّل كل وصفة باسم الطبيب الذي كتبها، ثم أضف إليها الأدوية ومواعيدها.</div>`;
-  [...S.rx].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).forEach(r=>{
+  S.rx.map((r,i)=>({r,i})).sort((a,b)=>(b.r.date||"").localeCompare(a.r.date||"")||b.i-a.i).map(x=>x.r).forEach(r=>{
     const dr=doctor(r.doctorId); const meds=S.meds.filter(m=>m.rxId===r.id);
     h+=`<div class="card rx"><div class="rx-head"><div><h3>${dr?"د. "+esc(dr.name):"طبيب غير محدد"}</h3><p>${dr?esc(dr.specialty||""):""}${r.date?" · "+new Date(r.date).toLocaleDateString("ar-EG",{day:"numeric",month:"long",year:"numeric"}):""}${r.title?" · "+esc(r.title):""}</p></div>
       <button class="icon-btn" data-editrx="${r.id}" aria-label="تعديل الوصفة">${I.edit}</button></div>`;
-    h+=meds.map(medRow).join("");
+    h+=[...meds].reverse().map(medRow).join("");
     h+=`<button class="btn line sm" data-addmed="${r.id}">${I.plus} إضافة دواء لهذه الوصفة</button></div>`;
   });
   $("#view").innerHTML=h;
@@ -581,7 +602,9 @@ function vRx(){
 function vDoctors(){
   let h=`<div class="sec-head"><h2>أطبائي</h2><button class="btn sm" id="addDoc">${I.plus} طبيب جديد</button></div>`;
   if(!S.doctors.length) h+=`<div class="empty"><b>لم تضف أطباء بعد</b>أضف اسم الطبيب وتخصصه ورقم العيادة لتربط به وصفاته.</div>`;
-  S.doctors.forEach(d=>{const n=S.rx.filter(r=>r.doctorId===d.id).length;
+  // Newest first: the doctor with the most recent prescription (or most recently added) on top.
+  const lastRx=d=>S.rx.filter(r=>r.doctorId===d.id).reduce((a,r)=>(r.date||"")>a?(r.date||""):a,"");
+  [...S.doctors].map((d,i)=>({d,i,k:lastRx(d)})).sort((a,b)=>b.k.localeCompare(a.k)||b.i-a.i).map(x=>x.d).forEach(d=>{const n=S.rx.filter(r=>r.doctorId===d.id).length;
     h+=`<div class="card doc"><div class="avatar">${esc((d.name||"؟").trim().charAt(0))}</div>
       <div><b>د. ${esc(d.name)}</b><div class="sub">${esc(d.specialty||"")}${d.phone?' · <span dir="ltr">'+esc(d.phone)+"</span>":""}</div>
       <div class="sub">${d.clinic?esc(d.clinic)+" · ":""}${n} ${n===1?"وصفة":"وصفات"}</div></div>
@@ -589,6 +612,70 @@ function vDoctors(){
   $("#view").innerHTML=h;
   $("#addDoc").onclick=()=>docSheet();
   $("#view").querySelectorAll("[data-editdoc]").forEach(b=>b.onclick=()=>docSheet(doctor(b.dataset.editdoc)));
+}
+
+/* ---------- view: monthly reports (newest month first) ---------- */
+const monthKey=k=>k.slice(0,7);
+const monthName=mk=>{const[y,m]=mk.split("-").map(Number);return new Date(y,m-1,1).toLocaleDateString("ar-EG",{month:"long",year:"numeric"});};
+function monthsWithData(){
+  const set=new Set([monthKey(today())]);
+  S.rx.forEach(r=>r.date&&set.add(monthKey(r.date)));
+  Object.keys(S.log).forEach(k=>/^\d{4}-\d{2}/.test(k)&&set.add(k.slice(0,7)));
+  S.prn.forEach(p=>set.add(monthKey(dkey(new Date(p.ts)))));
+  S.meds.forEach(m=>m.start&&!m.prn&&set.add(monthKey(m.start)));
+  return [...set].filter(mk=>mk<=monthKey(today())).sort().reverse();
+}
+function monthStats(mk){
+  const [y,m]=mk.split("-").map(Number); const last=new Date(y,m,0).getDate(); const tk=today();
+  let planned=0,taken=0,skipped=0;
+  for(let d=1;d<=last;d++){ const k=mk+"-"+pad(d); if(k>tk) break;
+    dosesFor(k).forEach(x=>{ if(k===tk && x.min>nowMin()) return; planned++; const st=S.log[x.key]; if(st==="taken")taken++; else if(st==="skipped")skipped++; }); }
+  const rx=S.rx.map((r,i)=>({r,i})).filter(x=>x.r.date&&monthKey(x.r.date)===mk).sort((a,b)=>b.r.date.localeCompare(a.r.date)||b.i-a.i).map(x=>x.r);
+  const docIds=[...new Set(rx.map(r=>r.doctorId).filter(Boolean))];
+  const prn=S.prn.filter(p=>monthKey(dkey(new Date(p.ts)))===mk);
+  const prnBy={}; prn.forEach(p=>{prnBy[p.medId]=(prnBy[p.medId]||0)+1;});
+  return {planned,taken,skipped,missed:planned-taken-skipped,pct:planned?Math.round(taken/planned*100):null,rx,docIds,prnBy,prnCount:prn.length};
+}
+let openMonth=null;
+function vReports(){
+  const months=monthsWithData(); if(openMonth===null||(openMonth&&!months.includes(openMonth))) openMonth=months[0];
+  let h=`<div class="sec-head"><h2>التقارير الشهرية</h2><span class="label">الأحدث أولاً</span></div>`;
+  if(!S.doctors.length&&!S.meds.length){ $("#view").innerHTML=h+`<div class="empty"><b>لا توجد بيانات بعد</b>عندما تضيف أطباءك ووصفاتهم وتسجّل جرعاتك، يظهر هنا ملخص لكل شهر.</div>`; return; }
+  months.forEach(mk=>{
+    const s=monthStats(mk); const open=mk===openMonth; const cur=mk===monthKey(today());
+    const pctCls=s.pct===null?"mut":s.pct>=90?"ok":s.pct>=60?"amb":"bad";
+    h+=`<div class="card rep ${open?"open":""}">
+      <button class="rep-head" data-month="${mk}" aria-expanded="${open}">
+        <div><h3>${monthName(mk)}</h3><span class="sub">${s.rx.length} ${s.rx.length===1?"وصفة":"وصفات"} · ${s.docIds.length} ${s.docIds.length===1?"طبيب":"أطباء"}${cur?" · الشهر الحالي":""}</span></div>
+        <span class="chip ${pctCls}">${s.pct===null?"لا جرعات":"التزام "+s.pct+"%"}</span></button>`;
+    if(open){
+      h+=`<div class="rep-stats">
+        <div><b>${s.taken}</b><span>جرعة أُخذت</span></div>
+        <div><b>${s.missed}</b><span>فاتت</span></div>
+        <div><b>${s.skipped}</b><span>تخطّي</span></div>
+        <div><b>${s.prnCount}</b><span>عند اللزوم</span></div></div>`;
+      if(s.planned) h+=`<div class="progress" aria-label="نسبة الالتزام ${s.pct}%"><i style="width:${s.pct}%"></i></div>`;
+      h+=`<div class="rep-sec"><div class="label">الوصفات خلال الشهر</div>`;
+      h+= s.rx.length ? s.rx.map(r=>{const dr=doctor(r.doctorId); const meds=S.meds.filter(m=>m.rxId===r.id);
+          return `<div class="rep-row"><div class="rep-date">${new Date(r.date).toLocaleDateString("ar-EG",{day:"numeric",month:"short"})}</div>
+            <div class="rep-body"><b>${dr?"د. "+esc(dr.name):"طبيب غير محدد"}</b><span class="sub">${dr&&dr.specialty?esc(dr.specialty):""}${r.title?(dr&&dr.specialty?" · ":"")+esc(r.title):""}</span>
+            ${meds.length?`<div class="times">${meds.map(m=>`<span class="chip teal">${esc(m.name)}</span>`).join("")}</div>`:""}</div></div>`;}).join("")
+        : `<p class="hint">لا توجد وصفات جديدة في هذا الشهر.</p>`;
+      h+=`</div>`;
+      if(s.docIds.length){
+        h+=`<div class="rep-sec"><div class="label">الأطباء الذين زرتهم</div>`+s.docIds.map(id=>{const d=doctor(id); const n=s.rx.filter(r=>r.doctorId===id).length;
+          return d?`<div class="rep-doc"><div class="avatar">${esc(d.name.trim().charAt(0))}</div><div><b>د. ${esc(d.name)}</b><span class="sub">${esc(d.specialty||"")}</span></div><span class="chip mut">${n} ${n===1?"وصفة":"وصفات"}</span></div>`:"";}).join("")+`</div>`;
+      }
+      const prnIds=Object.keys(s.prnBy);
+      if(prnIds.length){
+        h+=`<div class="rep-sec"><div class="label">أدوية عند اللزوم</div>`+prnIds.sort((a,b)=>s.prnBy[b]-s.prnBy[a]).map(id=>{const m=S.meds.find(x=>x.id===id);
+          return `<div class="rep-doc"><div>${pill(26,"var(--amber)")}</div><div><b>${m?esc(m.name):"دواء محذوف"}</b><span class="sub">${m?esc(m.dose||""):""}</span></div><span class="chip amb">${s.prnBy[id]} مرة</span></div>`;}).join("")+`</div>`;
+      }
+    }
+    h+=`</div>`;
+  });
+  $("#view").innerHTML=h;
+  $("#view").querySelectorAll("[data-month]").forEach(b=>b.onclick=()=>{ openMonth = openMonth===b.dataset.month? "" : b.dataset.month; vReports(); });
 }
 
 /* ---------- view: settings ---------- */
@@ -617,18 +704,11 @@ function vMore(){
     <button class="btn" id="ics">إضافة المواعيد إلى تقويم الهاتف (.ics)</button>
   </div>
   <div class="card" style="display:grid;gap:10px">
-    <b>نسخة احتياطية</b>
-    <p class="hint">بياناتك محفوظة على هذا الهاتف فقط. احفظ نسخة لنقلها لهاتف آخر أو استعادتها.</p>
-    <div class="row"><button class="btn ghost sm" id="exp">حفظ نسخة</button><button class="btn ghost sm" id="cp">نسخ كنص</button><label class="btn ghost sm" for="impf">استعادة من ملف</label><input type="file" id="impf" accept=".json,application/json" hidden></div>
-    <textarea class="code" id="bk" aria-label="نص النسخة الاحتياطية" placeholder="أو الصق نص نسخة احتياطية هنا ثم اضغط استعادة"></textarea>
-    <div class="row"><button class="btn line sm" id="impt">استعادة من النص</button></div>
-  </div>
-  <div class="card" style="display:grid;gap:10px">
     <b>حذف كل البيانات</b><p class="hint">يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف.</p>
     <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">حذف كل البيانات</button></div>
   </div>
   <div class="card set-list">
-    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>رسائل صوتية مسجّلة، اختيار الساعة والدقيقة بسهولة، وخط أكبر للمنبّه</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
+    <div class="set-item"><div><b>إصدار التطبيق ${APP_VERSION}</b><small>تقارير شهرية للأطباء والوصفات، والأحدث يظهر أولاً</small></div><button class="btn sm ghost" id="forceUpd">تحديث الآن</button></div>
   </div>
   <p class="hint" style="text-align:center">يعمل بدون إنترنت · لا يرسل أي بيانات لأي خادم</p>`;
   $("#forceUpd").onclick=forceUpdate;
@@ -649,11 +729,6 @@ function vMore(){
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
   const a=$("#askN"); if(a) a.onclick=async()=>{try{await Notification.requestPermission();}catch(e){} vMore();};
   $("#ics").onclick=exportICS;
-  $("#exp").onclick=()=>download("medicine-backup-"+today()+".json",JSON.stringify(S,null,1),"application/json");
-  $("#cp").onclick=()=>{const t=JSON.stringify(S);$("#bk").value=t;
-    navigator.clipboard?.writeText(t).then(()=>toast("تم النسخ"),()=>{$("#bk").select();toast("حدد النص وانسخه");}) ?? ($("#bk").select());};
-  $("#impf").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>restore(r.result);r.readAsText(f);};
-  $("#impt").onclick=()=>restore($("#bk").value);
   $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">متأكد؟ لا يمكن التراجع.</span><button class="btn danger sm" id="wipe2">نعم، احذف</button><button class="btn ghost sm" id="wipeNo">إلغاء</button>`;
     $("#wipe2").onclick=()=>{S=blank();save();toast("تم حذف البيانات");render();welcome();};
     $("#wipeNo").onclick=vMore;};
