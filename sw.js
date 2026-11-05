@@ -1,5 +1,5 @@
 // Network first for the app page (updates arrive on the next open), cache as offline fallback.
-const C="dawa-v13";const FILES=["./","./index.html","./manifest.webmanifest","./icon.svg","./voice/f-after.mp3","./voice/f-before.mp3","./voice/f-empty.mp3","./voice/f-none.mp3","./voice/f-sleep.mp3","./voice/f-with.mp3","./voice/m-after.mp3","./voice/m-before.mp3","./voice/m-empty.mp3","./voice/m-none.mp3","./voice/m-sleep.mp3","./voice/m-with.mp3"];
+const C="dawa-v14";const FILES=["./","./index.html","./manifest.webmanifest","./icon.svg","./voice/f-after.mp3","./voice/f-before.mp3","./voice/f-empty.mp3","./voice/f-none.mp3","./voice/f-sleep.mp3","./voice/f-with.mp3","./voice/m-after.mp3","./voice/m-before.mp3","./voice/m-empty.mp3","./voice/m-none.mp3","./voice/m-sleep.mp3","./voice/m-with.mp3"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()));});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
 self.addEventListener("fetch",e=>{
