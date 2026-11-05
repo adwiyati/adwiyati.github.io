@@ -192,7 +192,7 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false}});
+const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:""}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast("تعذّر الحفظ على هذا الجهاز");}}
@@ -269,11 +269,26 @@ document.addEventListener("touchend",primeSpeech,{capture:true});
 const HAS_TTS="speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let VOICES=[], speechPrimed=false;
 function loadVoices(){ try{ VOICES=speechSynthesis.getVoices()||[]; }catch(e){ VOICES=[]; } }
-if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged",()=>{loadVoices(); const vi=document.getElementById("voiceInfo"); if(vi){const t=voiceInfo(); if(vi.textContent!==t) vi.textContent=t;}}); }catch(e){} }
+if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged",()=>{loadVoices(); const vi=document.getElementById("voiceInfo"); if(vi){const t=voiceInfo(); if(vi.textContent!==t) vi.textContent=t;}
+      const sel=document.getElementById("voice"); const ar=arVoices(); if(sel&&sel.options.length!==ar.length+1){ sel.innerHTML=`<option value="">تلقائي (نسائي)</option>`+ar.map(v=>`<option value="${esc(v.voiceURI)}" ${S.settings.voiceURI===v.voiceURI?"selected":""}>${esc(v.name)}${isFemale(v)?" — نسائي":""}${/eg/i.test(v.lang)?" — مصري":""}</option>`).join(""); } }); }catch(e){} }
+// Browsers don't report a voice's gender, so female voices are recognised by name.
+const FEMALE=/salma|laila|layla|leila|hoda|huda|zeina|zeinab|zainab|mariam|maryam|amira|amna|fatima|hala|rana|dalia|nour|noura|sara|yasmin|samira|farah|reem|rasha|mona|female|woman|سلمى|ليلى|هدى|زينة|مريم/i;
+const MALE=/maged|majed|shakir|hamed|tarek|naayf|naif|omar|ahmed|(^|[^e])male/i;
+const arVoices=()=>{ if(!VOICES.length) loadVoices(); return VOICES.filter(v=>/^ar([-_]|$)/i.test(v.lang)); };
+const isFemale=v=>FEMALE.test(v.name);
 function arabicVoice(){
-  if(!VOICES.length) loadVoices();
-  const ar=VOICES.filter(v=>/^ar([-_]|$)/i.test(v.lang));
-  return ar.find(v=>/eg/i.test(v.lang)) || ar.find(v=>v.localService) || ar[0] || null;
+  const ar=arVoices(); if(!ar.length) return null;
+  if(S.settings.voiceURI){ const p=ar.find(v=>v.voiceURI===S.settings.voiceURI); if(p) return p; }
+  const eg=v=>/eg/i.test(v.lang);
+  return ar.find(v=>eg(v)&&isFemale(v)) || ar.find(isFemale) || ar.find(v=>eg(v)&&!MALE.test(v.name))
+    || ar.find(v=>!MALE.test(v.name)) || ar.find(eg) || ar[0];
+}
+// What the alarm says, in Egyptian colloquial Arabic.
+const FOOD_EG={"":"","before":"قبل الأكل","after":"بعد الأكل","with":"مع الأكل","empty":"على معدة فاضية","sleep":"قبل ما تنام"};
+function alarmSpeech(m){
+  const n=S.profile.name?`يا ${S.profile.name}، `:"";
+  const food=FOOD_EG[m.food||""];
+  return `${n}ميعاد الدوا جه. خُد ${m.name}${m.dose?"، "+m.dose:""}${food?"، "+food:""}. ربنا يديك الصحة.`;
 }
 // Phones (iPhone especially) only allow speech after it was first started by a tap.
 function primeSpeech(){
@@ -285,22 +300,33 @@ function speak(text,done){
   if(!S.settings.speech||!HAS_TTS){ setTimeout(end,1200); return; }
   try{
     const u=new SpeechSynthesisUtterance(text); const v=arabicVoice();
-    if(v){u.voice=v;u.lang=v.lang;} else u.lang="ar-SA";
-    u.rate=.9; u.volume=1; u.onend=end; u.onerror=end;
+    if(v){u.voice=v;u.lang=v.lang;} else u.lang="ar-EG";
+    // No known female voice on the phone: raise the pitch a little for a softer voice.
+    u.pitch = v&&isFemale(v) ? 1 : 1.25;
+    u.rate=.92; u.volume=1; u.onend=end; u.onerror=end;
     const go=()=>{ try{ speechSynthesis.resume(); speechSynthesis.speak(u); }catch(e){ end(); } };
     // Chrome on Android drops a speak() issued right after cancel(); give it a moment.
     if(speechSynthesis.speaking||speechSynthesis.pending){ speechSynthesis.cancel(); setTimeout(go,250); } else go();
     setTimeout(end,Math.max(6000,text.length*160));
   }catch(e){ end(); }
 }
-function chime(){
-  if(!AC) return; const v=S.settings.volume; const t0=AC.currentTime;
-  [[880,0],[1175,.18],[1568,.36],[1175,.9],[1568,1.08],[2093,1.26]].forEach(([f,dt])=>{
-    const o=AC.createOscillator(),g=AC.createGain(); o.type="sine"; o.frequency.value=f;
-    g.gain.setValueAtTime(0.0001,t0+dt); g.gain.exponentialRampToValueAtTime(Math.max(.001,v*.6),t0+dt+.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+dt+.5);
-    o.connect(g).connect(AC.destination); o.start(t0+dt); o.stop(t0+dt+.55);
-  });
+/* ---------- alarm tones (synthesised, no sound files needed) ---------- */
+function note(f,dt,dur,type,amp,f2){
+  const t=AC.currentTime+dt, o=AC.createOscillator(), g=AC.createGain(); const v=Math.max(.001,S.settings.volume*amp);
+  o.type=type; o.frequency.setValueAtTime(f,t); if(f2) o.frequency.linearRampToValueAtTime(f2,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(v,t+.015); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.05);
 }
+const TONES={
+  chime:{name:"رنين هادئ",play(){[[880,0],[1175,.18],[1568,.36],[1175,.9],[1568,1.08],[2093,1.26]].forEach(([f,d])=>note(f,d,.5,"sine",.6));}},
+  bell:{name:"جرس",play(){[0,.8].forEach(d=>{note(660,d,1.6,"sine",.5);note(1320,d,1.1,"sine",.22);note(1980,d,.7,"sine",.12);note(2640,d,.4,"sine",.06);});}},
+  classic:{name:"منبّه كلاسيكي",play(){for(let i=0;i<4;i++){note(1046,i*.32,.12,"square",.22);note(1046,i*.32+.15,.12,"square",.22);}}},
+  marimba:{name:"ماريمبا",play(){[[523,0],[659,.15],[784,.3],[1046,.45],[784,.75],[1046,.9],[1318,1.05]].forEach(([f,d])=>{note(f,d,.35,"triangle",.7);note(f*4,d,.08,"sine",.1);});}},
+  soft:{name:"نبضات ناعمة",play(){[0,.55,1.1].forEach(d=>note(440,d,.45,"sine",.55,520));}},
+  birds:{name:"عصافير",play(){[0,.22,.5,.72,1.1,1.3].forEach((d,i)=>note(2400+(i%3)*300,d,.14,"sine",.3,3400+(i%2)*400));}},
+  urgent:{name:"تنبيه عاجل",play(){[0,.45,.9].forEach(d=>note(700,d,.4,"sawtooth",.18,1300));}},
+};
+function chime(){ if(!AC) return; try{ (TONES[S.settings.tone]||TONES.chime).play(); }catch(e){} }
 // Ring cycle: chime + vibrate, then speak the medicine name and dose, then repeat until a button is pressed.
 let ringing=false;
 function startRinging(text){
@@ -366,7 +392,7 @@ function showAlarm(d){
     else { if(!d.key.startsWith("test|")){S.log[d.key]=a; save();} toast(a==="taken"?"تم تسجيل الجرعة ✓":"تم تخطي الجرعة"); }
     render(); setTimeout(checkDue,300);
   });
-  const text=`يا ${S.profile.name||""}، حان موعد ${m.name}. الجرعة: ${m.dose||""}. ${food}`;
+  const text=alarmSpeech(m);
   startRinging(text);
   systemNotify("💊 حان موعد "+m.name,(m.dose||"")+(food?" · "+food:""),d.key);
 }
@@ -529,6 +555,10 @@ function vMore(){
   <div class="card set-list">
     <div class="set-item"><div><b>تجربة المنبّه</b><small>اسمع صوت التنبيه والنطق الآن</small></div><button class="btn sm" id="testAlarm">تجربة</button></div>
     <div class="set-item"><div><b>نطق اسم الدواء والجرعة</b><small>يقرأ التنبيه بصوت عربي</small></div><input type="checkbox" class="switch" id="sp" ${S.settings.speech?"checked":""} aria-label="نطق اسم الدواء"></div>
+    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 180px"><b>نغمة المنبّه</b><small>اختر نغمة واسمعها</small></div>
+      <div class="row"><select id="tone" class="btn ghost sm" aria-label="نغمة المنبّه">${Object.entries(TONES).map(([k,t])=>`<option value="${k}" ${S.settings.tone===k?"selected":""}>${t.name}</option>`).join("")}</select><button class="btn sm ghost" id="playTone" aria-label="تشغيل النغمة">▶</button></div></div>
+    <div class="set-item" style="flex-wrap:wrap"><div style="flex:1 1 180px"><b>صوت النطق</b><small>يُفضَّل صوت نسائي مصري إن وُجد على الهاتف</small></div>
+      <select id="voice" class="btn ghost sm" aria-label="صوت النطق" style="max-width:100%"><option value="">تلقائي (نسائي)</option>${arVoices().map(v=>`<option value="${esc(v.voiceURI)}" ${S.settings.voiceURI===v.voiceURI?"selected":""}>${esc(v.name)}${isFemale(v)?" — نسائي":""}${/eg/i.test(v.lang)?" — مصري":""}</option>`).join("")}</select></div>
     <div class="set-item"><div><b>تجربة النطق</b><small id="voiceInfo">${voiceInfo()}</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
     <div class="set-item"><div><b>مستوى الصوت</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="مستوى الصوت"></div>
     <div class="set-item"><div><b>مدة الغفوة</b></div><select id="snz" class="btn ghost sm" aria-label="مدة الغفوة">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} دقائق</option>`).join("")}</select></div>
@@ -557,9 +587,12 @@ function vMore(){
   $("#vol").onchange=e=>{S.settings.volume=Number(e.target.value);save();unlockAudio();chime();};
   $("#snz").onchange=e=>{S.settings.snooze=Number(e.target.value);save();};
   $("#wk").onchange=e=>setWake(e.target.checked);
+  $("#tone").onchange=e=>{S.settings.tone=e.target.value;save();unlockAudio();setTimeout(chime,120);};
+  $("#playTone").onclick=()=>{unlockAudio();setTimeout(chime,120);};
+  $("#voice").onchange=e=>{S.settings.voiceURI=e.target.value;save();const vi=$("#voiceInfo");if(vi)vi.textContent=voiceInfo();$("#testSpeak").click();};
   $("#testSpeak").onclick=()=>{ speechPrimed=true; if(!HAS_TTS){toast("هذا المتصفح لا يدعم النطق");return;}
     const was=S.settings.speech; S.settings.speech=true;
-    const m=S.meds[0]; speak(`${S.profile.name?"يا "+S.profile.name+"، ":""}حان موعد ${m?m.name:"الدواء"}. الجرعة: ${m?(m.dose||""):"قرص واحد"}`);
+    const m=S.meds.find(x=>!x.prn)||{name:"فيتامين د",dose:"كبسولة واحدة",food:"after"}; speak(alarmSpeech(m));
     S.settings.speech=was; setTimeout(()=>{ const vi=$("#voiceInfo"); if(vi) vi.textContent=voiceInfo(); },800); };
   $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:"دواء تجريبي",dose:"قرص واحد",food:"after",id:"demo"};
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
@@ -577,7 +610,7 @@ function vMore(){
 function voiceInfo(){
   if(!HAS_TTS) return "هذا المتصفح لا يدعم النطق. جرّب Chrome على أندرويد أو Safari على آيفون.";
   const v=arabicVoice();
-  if(v) return "الصوت العربي: "+v.name;
+  if(v) return "الصوت المستخدم: "+v.name+(isFemale(v)?" (نسائي)":"")+(/eg/i.test(v.lang)?" (مصري)":"");
   return /iPhone|iPad|iPod/i.test(navigator.userAgent)
     ? "لم يُعثر على صوت عربي. من الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، نزّل صوتاً."
     : "لم يُعثر على صوت عربي. من إعدادات الهاتف ← اللغة والإدخال ← تحويل النص إلى كلام ← محرك Google ← تثبيت بيانات الصوت ← العربية.";
