@@ -269,7 +269,7 @@ document.addEventListener("touchend",primeSpeech,{capture:true});
 const HAS_TTS="speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let VOICES=[], speechPrimed=false;
 function loadVoices(){ try{ VOICES=speechSynthesis.getVoices()||[]; }catch(e){ VOICES=[]; } }
-if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged",()=>{loadVoices(); if(tab==="more"&&!document.querySelector(".scrim"))vMore();}); }catch(e){} }
+if(HAS_TTS){ loadVoices(); try{ speechSynthesis.addEventListener("voiceschanged",()=>{loadVoices(); const vi=document.getElementById("voiceInfo"); if(vi){const t=voiceInfo(); if(vi.textContent!==t) vi.textContent=t;}}); }catch(e){} }
 function arabicVoice(){
   if(!VOICES.length) loadVoices();
   const ar=VOICES.filter(v=>/^ar([-_]|$)/i.test(v.lang));
@@ -739,7 +739,7 @@ render();
 if(!S.profile.name && !S.meds.length) welcome();
 if(S.settings.wake) setWake(true);
 setInterval(()=>{checkDue();},10000);
-setInterval(()=>{ if(!document.querySelector(".scrim")) render(); else renderTop(); },60000);
+setInterval(()=>{ if(!document.querySelector(".scrim") && tab!=="more") render(); else renderTop(); },60000);
 setTimeout(checkDue,1500);
 try{ if("speechSynthesis" in window) speechSynthesis.getVoices(); }catch(e){}
 })();
