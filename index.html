@@ -223,11 +223,54 @@ document.documentElement.lang="ar"; document.documentElement.dir="rtl";
 
 /* ---------- storage ---------- */
 const KEY="dawa.v1";
-const APP_VERSION="1.9";
+const APP_VERSION="2.0";
 const blank=()=>({profile:{name:""},doctors:[],rx:[],meds:[],log:{},prn:[],settings:{speech:true,volume:0.8,snooze:10,wake:false,tone:"chime",voiceURI:"",gender:"female"}});
 let S=blank();
 function load(){try{const t=localStorage.getItem(KEY);if(t){S=Object.assign(blank(),JSON.parse(t));S.settings=Object.assign(blank().settings,S.settings||{});}}catch(e){}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast("تعذّر الحفظ على هذا الجهاز");}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast("تعذّر الحفظ على هذا الجهاز");} scheduleNativeSoon();}
+
+/* ---------- Android app: phone alarms that ring while the app is closed ---------- */
+const NATIVE=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+const LN=NATIVE&&window.Capacitor.Plugins?window.Capacitor.Plugins.LocalNotifications:null;
+const IS_ANDROID=/Android/i.test(navigator.userAgent), IS_IOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+const APK_URL="https://github.com/adwiyati/adwiyati-android/releases/latest/download/adwiyati.apk";
+const hid=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>1)%2000000000+1;};
+let schedT=null, nativeReady=false;
+function scheduleNativeSoon(){ if(!LN) return; clearTimeout(schedT); schedT=setTimeout(scheduleNative,700); }
+async function nativeSetup(){
+  if(!LN) return;
+  try{
+    let p=await LN.checkPermissions(); if(p.display!=="granted") p=await LN.requestPermissions();
+    for(const g of ["f","m"]) await LN.createChannel({id:"alarm_"+g,name:g==="f"?"منبّه الدواء - صوت نسائي":"منبّه الدواء - صوت رجالي",
+      description:"تنبيهات مواعيد الأدوية",importance:5,visibility:1,sound:"voice_"+g+".mp3",vibration:true,lights:true,lightColor:"#14504F"});
+    LN.addListener("localNotificationActionPerformed",()=>{ render(); setTimeout(checkDue,400); });
+    nativeReady=true; scheduleNative();
+  }catch(e){ console.warn("native setup",e); }
+}
+// Schedules the next 14 days of doses, plus a follow-up 15 minutes after each one in case it isn't recorded.
+// Called after every change, so a dose marked taken or skipped loses its pending alarms.
+async function scheduleNative(){
+  if(!LN||!nativeReady) return;
+  try{
+    const pend=await LN.getPending(); if(pend.notifications.length) await LN.cancel({notifications:pend.notifications.map(n=>({id:n.id}))});
+    const list=[], now=Date.now(), ch="alarm_"+(wantMale()?"m":"f"), DAYS=14;
+    for(let i=0;i<DAYS&&list.length<440;i++){ const k=addDays(today(),i); const [y,mo,da]=k.split("-").map(Number);
+      dosesFor(k).forEach(d=>{ if(d.status) return; const [h,mi]=d.time.split(":").map(Number); const at=new Date(y,mo-1,da,h,mi,0);
+        const food=FOOD[d.med.food||""]; const body=`${d.med.name}${d.med.dose?" — "+d.med.dose:""}${food?" · "+food:""}`;
+        const base={body,largeBody:body,channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",extra:{key:d.key}};
+        if(at.getTime()>now) list.push({...base,id:hid(d.key),title:"💊 حان موعد الدواء",schedule:{at,allowWhileIdle:true}});
+        const f=new Date(at.getTime()+15*60000); if(f.getTime()>now) list.push({...base,id:hid(d.key+"|f"),title:"⏰ تذكير: لم تُسجَّل الجرعة بعد",schedule:{at:f,allowWhileIdle:true}});
+      });
+    }
+    if(S.meds.some(m=>!m.prn&&!m.paused)) list.push({id:hid("refresh"),title:"أدويتي",body:"افتح التطبيق مرة واحدة لتجديد منبّهات الأسبوعين القادمين",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(now+(DAYS-1)*864e5),allowWhileIdle:true}});
+    if(list.length) await LN.schedule({notifications:list});
+  }catch(e){ console.warn("schedule",e); }
+}
+async function nativeTest(){
+  if(!LN) return; const ch="alarm_"+(wantMale()?"m":"f");
+  try{ await LN.schedule({notifications:[{id:hid("test"+Date.now()),title:"💊 تجربة منبّه أدويتي",body:"المنبّهات تعمل والتطبيق مغلق",channelId:ch,smallIcon:"ic_stat_pill",iconColor:"#14504F",schedule:{at:new Date(Date.now()+10000),allowWhileIdle:true}}]});
+    toast("سيصلك تنبيه بعد 10 ثوانٍ. يمكنك إغلاق التطبيق الآن"); }catch(e){ toast("تعذّر ضبط التنبيه. تأكد من السماح بالإشعارات"); }
+}
 load();
 
 /* ---------- helpers ---------- */
@@ -411,7 +454,7 @@ function stopRinging(){ ringing=false; if(ringTimer){clearTimeout(ringTimer);rin
   try{ if(HAS_TTS) speechSynthesis.cancel();}catch(e){} if(navigator.vibrate) try{navigator.vibrate(0);}catch(e){} }
 
 let SWREG=null;
-if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+if(!NATIVE && "serviceWorker" in navigator && location.protocol.startsWith("http")){
   // Check for a new version every time the app opens; when it arrives, reload once so it shows straight away.
   let reloaded=false; const hadController=!!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange",()=>{ if(reloaded||!hadController||document.querySelector(".scrim"))return; reloaded=true; location.reload(); });
@@ -508,7 +551,8 @@ function render(){ renderTop(); renderTabs(); ({today:vToday,rx:vRx,doctors:vDoc
 function vToday(){
   const k=today(); const list=dosesFor(k);
   const done=list.filter(d=>d.status==="taken").length;
-  let h=`<div class="sec-head"><h2>جرعات اليوم</h2><span class="chip teal">${done} من ${list.length}</span></div>`;
+  let h=(IS_ANDROID&&!NATIVE&&!S.settings.hideApk)?`<div class="card apk-banner" style="display:grid;gap:8px">${apkBlock()}<button class="btn line sm" id="hideApk">لاحقاً</button></div>`:"";
+  h+=`<div class="sec-head"><h2>جرعات اليوم</h2><span class="chip teal">${done} من ${list.length}</span></div>`;
   if(list.length){
     h+=`<div class="progress" aria-hidden="true"><i style="width:${list.length?done/list.length*100:0}%"></i></div>`;
     h+=list.map(d=>{const st=stateOf(d); const m=d.med; const food=FOOD[m.food||""];
@@ -543,6 +587,7 @@ function vToday(){
   }
   h+=GIFT;
   $("#view").innerHTML=h;
+  const ha=$("#hideApk"); if(ha) ha.onclick=()=>{S.settings.hideApk=true;save();render();};
 }
 // The author's dedication, shown on the welcome screen, under Today and in Settings.
 const GIFT=`<div class="gift"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 5 6.4 5c2.1 0 3.6 1.2 4.6 2.6.9-1.4 2.5-2.6 4.6-2.6 3.4 0 5.5 3.4 4 6.8C19.5 16.4 12 21 12 21z" fill="currentColor"/></svg>
@@ -705,14 +750,10 @@ function vMore(){
     <div class="set-item"><div><b>تجربة الرسالة الصوتية</b><small>اسمع الرسالة بالصوت المختار</small></div><button class="btn sm ghost" id="testSpeak">اسمع</button></div>
     <div class="set-item"><div><b>مستوى الصوت</b></div><input type="range" id="vol" min="0.1" max="1" step="0.1" value="${S.settings.volume}" style="width:140px" aria-label="مستوى الصوت"></div>
     <div class="set-item"><div><b>مدة الغفوة</b></div><select id="snz" class="btn ghost sm" aria-label="مدة الغفوة">${[5,10,15,30].map(n=>`<option value="${n}" ${S.settings.snooze==n?"selected":""}>${n} دقائق</option>`).join("")}</select></div>
-    <div class="set-item"><div><b>إشعارات الهاتف</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">تفعيل</button>':""}</div>
+    ${NATIVE?"":`<div class="set-item"><div><b>إشعارات الهاتف</b><small>${permTxt}</small></div>${perm==="default"?'<button class="btn sm" id="askN">تفعيل</button>':""}</div>`}
     <div class="set-item"><div><b>إبقاء الشاشة مضاءة</b><small>يضمن رنين المنبّه أثناء فتح التطبيق</small></div><input type="checkbox" class="switch" id="wk" ${S.settings.wake?"checked":""} aria-label="إبقاء الشاشة مضاءة"></div>
   </div>
-  <div class="card" style="display:grid;gap:10px">
-    <b>تنبيهات حتى والتطبيق مغلق</b>
-    <p class="hint">المتصفح لا يستطيع الرنين وهو مغلق تماماً. لضمان التنبيه دائماً، أضف مواعيد أدويتك إلى تقويم الهاتف كمواعيد يومية بمنبّه، بدون إنترنت.</p>
-    <button class="btn" id="ics">إضافة المواعيد إلى تقويم الهاتف (.ics)</button>
-  </div>
+  ${closedAlarmCard()}
   <div class="card" style="display:grid;gap:10px">
     <b>حذف كل البيانات</b><p class="hint">يحذف الأطباء والوصفات والأدوية والسجل من هذا الهاتف.</p>
     <div class="row" id="wipeRow"><button class="btn danger sm" id="wipe">حذف كل البيانات</button></div>
@@ -739,7 +780,8 @@ function vMore(){
   $("#testAlarm").onclick=()=>{unlockAudio(); const m=S.meds[0]||{name:"دواء تجريبي",dose:"قرص واحد",food:"after",id:"demo"};
     setTimeout(()=>showAlarm({key:"test|"+Date.now(),med:m,time:pad(new Date().getHours())+":"+pad(new Date().getMinutes())}),120); };
   const a=$("#askN"); if(a) a.onclick=async()=>{try{await Notification.requestPermission();}catch(e){} vMore();};
-  $("#ics").onclick=exportICS;
+  const ics=$("#ics"); if(ics) ics.onclick=exportICS;
+  const nt=$("#nativeTest"); if(nt) nt.onclick=nativeTest;
   $("#wipe").onclick=()=>{$("#wipeRow").innerHTML=`<span class="hint">متأكد؟ لا يمكن التراجع.</span><button class="btn danger sm" id="wipe2">نعم، احذف</button><button class="btn ghost sm" id="wipeNo">إلغاء</button>`;
     $("#wipe2").onclick=()=>{S=blank();save();toast("تم حذف البيانات");render();welcome();};
     $("#wipeNo").onclick=vMore;};
@@ -759,6 +801,27 @@ function voiceInfo(){
   return /iPhone|iPad|iPod/i.test(navigator.userAgent)
     ? "لم يُعثر على صوت عربي. من الإعدادات ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، نزّل صوتاً."
     : "لم يُعثر على صوت عربي. من إعدادات الهاتف ← اللغة والإدخال ← تحويل النص إلى كلام ← محرك Google ← تثبيت بيانات الصوت ← العربية.";
+}
+// Plain-language card about alarms while the app is closed, different for each kind of phone.
+function closedAlarmCard(){
+  if(NATIVE) return `<div class="card" style="display:grid;gap:10px;border-color:var(--ok)">
+    <b style="color:var(--ok)">✓ المنبّه يرنّ حتى والتطبيق مغلق</b>
+    <p class="hint">سيرنّ الهاتف في موعد كل جرعة ويُظهر اسم الدواء. لا تحتاج لفتح التطبيق.</p>
+    <button class="btn" id="nativeTest">جرّب المنبّه الآن</button>
+    <p class="hint">إذا لم يرنّ على هاتفك: إعدادات الهاتف ← التطبيقات ← أدويتي ← البطارية ← اختر «بلا قيود».</p></div>`;
+  if(IS_ANDROID) return `<div class="card" style="display:grid;gap:10px">${apkBlock()}</div>`;
+  if(IS_IOS) return `<div class="card" style="display:grid;gap:10px">
+    <b>على الآيفون</b>
+    <p class="hint">المنبّه يرنّ والتطبيق مفتوح. اترك التطبيق مفتوحاً وفعّل «إبقاء الشاشة مضاءة» بالأعلى.</p>
+    <button class="btn ghost" id="ics">أضف المواعيد إلى تقويم الآيفون</button>
+    <p class="hint">التقويم يرنّ في موعد كل دواء حتى والتطبيق مغلق.</p></div>`;
+  return "";
+}
+function apkBlock(){
+  return `<b>حمّل تطبيق «أدويتي» لأندرويد</b>
+    <p class="hint">ليرنّ المنبّه في موعد الدواء حتى والتطبيق مغلق. مجاني بالكامل.</p>
+    <a class="btn" href="${APK_URL}" rel="noopener">تحميل التطبيق</a>
+    <p class="hint">بعد التحميل افتح الملف واضغط «تثبيت». إذا طلب الهاتف إذناً، اضغط «الإعدادات» ثم «السماح من هذا المصدر».</p>`;
 }
 function restore(txt){
   try{const d=JSON.parse(txt); if(!d||!Array.isArray(d.meds)||!Array.isArray(d.doctors)) throw 0;
@@ -922,6 +985,8 @@ function toast(msg){ let t=$("#toast"); if(!t){t=document.createElement("div");t
   t.innerHTML=`<span>${esc(msg)}</span>`; t.hidden=false; clearTimeout(tT); tT=setTimeout(()=>{t.hidden=true;},2400); }
 
 /* ---------- boot ---------- */
+nativeSetup();
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") scheduleNativeSoon(); });
 render();
 if(!S.profile.name && !S.meds.length) welcome();
 if(S.settings.wake) setWake(true);
